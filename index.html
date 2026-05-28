@@ -14,62 +14,64 @@
         <p class="subtitle">Manage volumes, RAID topologies, subvolumes, and snapshots.</p>
     </div>
 
-    <div class="action-buttons">
-        <button class="btn btn-primary" id="btn-create-raid">Create New RAID Volume</button>
-        <button class="btn btn-secondary" id="btn-refresh">Refresh Data</button>
+    <div id="view-master">
+        <div id="disk-container" class="disk-grid">
+            <p style="font-size: 18px; font-weight: bold;">Loading system data...</p>
+        </div>
+
+        <div style="margin: 40px 0; border-top: 2px dashed var(--border-dashed);"></div>
+
+        <div class="action-buttons">
+            <button class="btn btn-primary" id="btn-create-raid">➕ Create New RAID Volume</button>
+            <button class="btn btn-secondary" id="btn-refresh">🔄 Refresh Data</button>
+        </div>
+
+        <div id="raid-form" class="btrfs-card raid-form-card hidden-element">
+            <h3>🛠 Create New BTRFS Volume</h3>
+            <div class="form-group">
+                <p class="form-label-block">1. Select Target Disks:</p>
+                <div id="available-disks" class="available-disks-box">Scanning block devices...</div>
+            </div>
+            <div class="form-group">
+                <p class="form-label-block">2. Volume Configuration:</p>
+                <label for="raid-profile" class="form-label">Data Profile:</label>
+                <select id="raid-profile" class="form-input">
+                    <option value="single">Single (1 Disk)</option>
+                    <option value="raid1">RAID 1 (Mirror - Min 2 Disks)</option>
+                    <option value="raid0">RAID 0 (Stripe - Min 2 Disks)</option>
+                    <option value="raid10">RAID 10 (Stripe+Mirror - Min 4 Disks)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="volume-label" class="form-label">Volume Label:</label>
+                <input type="text" id="volume-label" class="form-input" placeholder="e.g., DataServer">
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-primary" id="btn-execute-format">⚡ Format & Create Volume</button>
+                <button class="btn btn-secondary" id="btn-cancel-format">Cancel</button>
+            </div>
+            <p id="format-status" class="status-console hidden-element" style="margin-top: 15px;"></p>
+        </div>
     </div>
 
-    <div id="raid-form" class="btrfs-card raid-form-card hidden-element">
-        <h3>🛠 Create New BTRFS Volume</h3>
-        
-        <div class="form-group">
-            <p class="form-label-block">1. Select Target Disks:</p>
-            <div id="available-disks" class="available-disks-box">Scanning block devices...</div>
+    <div id="view-detail" class="hidden-element">
+        <div style="margin-bottom: 20px;">
+            <button class="btn btn-secondary" id="btn-back-master">⬅ Back to Volumes</button>
         </div>
-
-        <div class="form-group">
-            <p class="form-label-block">2. Volume Configuration:</p>
-            <label for="raid-profile" class="form-label">Data Profile:</label>
-            <select id="raid-profile" class="form-input">
-                <option value="single">Single (1 Disk)</option>
-                <option value="raid1">RAID 1 (Mirror - Min 2 Disks)</option>
-                <option value="raid0">RAID 0 (Stripe - Min 2 Disks)</option>
-                <option value="raid10">RAID 10 (Stripe+Mirror - Min 4 Disks)</option>
-            </select>
-        </div>
-        
-        <div class="form-group">
-            <label for="volume-label" class="form-label">Volume Label:</label>
-            <input type="text" id="volume-label" class="form-input" placeholder="e.g., DataServer">
-        </div>
-        
-        <div class="form-actions">
-            <button class="btn btn-primary" id="btn-execute-format">⚡ Format & Create Volume</button>
-            <button class="btn btn-secondary" id="btn-cancel-format">Cancel</button>
-        </div>
-        
-        <p id="format-status" class="status-console hidden-element" style="margin-top: 15px;"></p>
-    </div>
-
-    <div id="disk-container">
-        <p>Loading system data...</p>
+        <div id="detail-container">
+            </div>
     </div>
 
     <div id="add-dev-modal" class="modal-overlay hidden-element">
         <div class="modal-content">
             <h3>➕ Add Device to Volume</h3>
             <p>Select an empty disk to merge into: <strong id="modal-mount-target" style="color: var(--btn-primary);"></strong></p>
-            
             <div class="form-group" style="margin: 20px 0;">
-                <select id="modal-disk-select" class="form-input" style="width: 100%; font-family: monospace; font-size: 14px;">
-                    <option value="">Scanning devices...</option>
-                </select>
+                <select id="modal-disk-select" class="form-input" style="width: 100%; font-family: monospace; font-size: 14px;"></select>
             </div>
-            
             <div class="alert-box">
                 <strong>⚠️ Warning:</strong> All existing data and partitions on the selected disk will be permanently wiped!
             </div>
-            
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="btn-close-modal">Cancel</button>
                 <button class="btn btn-primary" id="btn-confirm-add-dev" disabled>Add Device</button>
