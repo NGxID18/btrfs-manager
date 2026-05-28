@@ -28,7 +28,7 @@ Because this is a vanilla frontend extension, no build process is required. You 
 2. Clone this repository into the user-specific Cockpit extensions folder:
    ```bash
    git clone [https://github.com/NGxID18/btrfs-manager.git](https://github.com/NGxID18/btrfs-manager.git) ~/.local/share/cockpit/btrfs-manager
-
+   ```
    (Note: For a system-wide installation available to all users, clone it to /usr/share/cockpit/btrfs-manager instead. This requires root privileges).
 
 3. Ensure the directory has the correct permissions (optional but recommended):
