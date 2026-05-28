@@ -49,24 +49,49 @@ function parseBtrfsOutput(rawData) {
 
     blocks.forEach((block, index) => {
         const labelMatch = block.match(/^(.*?)?\s+uuid:\s+([a-z0-9\-]+)/);
-        const pathMatch = block.match(/path\s+(\/dev\/\S+)/);
-        const sizeMatch = block.match(/size\s+([0-9.]+[GMKT]iB)/);
-
         const labelRaw = labelMatch && labelMatch[1] ? labelMatch[1].trim() : "";
         const label = (labelRaw !== "none" && labelRaw !== "") ? labelRaw.replace(/'/g, "") : "Sistem/Root (Tanpa Label)";
         const uuid = labelMatch ? labelMatch[2] : "-";
-        const path = pathMatch ? pathMatch[1] : "-";
-        const size = sizeMatch ? sizeMatch[1] : "-";
 
-        const mountPoint = mountMap[path] || mountMap[`UUID=${uuid}`] || mountMap[path + "1"] || (label === "Sistem/Root (Tanpa Label)" ? "/" : "");
+        // Deteksi path pertama untuk pemetaan Mount Point
+        const pathMatch = block.match(/path\s+(\/dev\/\S+)/);
+        const firstPath = pathMatch ? pathMatch[1] : "-";
+        const mountPoint = mountMap[firstPath] || mountMap[`UUID=${uuid}`] || mountMap[firstPath + "1"] || (label === "Sistem/Root (Tanpa Label)" ? "/" : "");
 
+        // --- FASE 4: EKSTRAKSI MULTI-DEVICE ---
+        let devicesHtml = `<div style="background: #fdfdfd; border: 1px solid #e0e0e0; padding: 10px; border-radius: 4px; margin-top: 10px; margin-bottom: 10px;">`;
+        devicesHtml += `<p style="margin-top:0; font-weight:bold; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 8px;">Topologi Perangkat Fisik:</p>`;
+
+        const detailedDevRegex = /devid\s+(\d+)\s+size\s+([0-9.]+\s?[a-zA-Z]+)\s+used\s+([0-9.]+\s?[a-zA-Z]+)\s+path\s+(\/dev\/\S+)/g;
+        let devMatch;
+        while ((devMatch = detailedDevRegex.exec(block)) !== null) {
+            devicesHtml += `
+                <div style="display:flex; justify-content:space-between; align-items: center; margin-bottom: 5px;">
+                    <span><span class="btrfs-code">${devMatch[4]}</span> <small>(ID: ${devMatch[1]} | Kapasitas: ${devMatch[2]})</small></span>
+                    ${mountPoint ? `<button class="btn-danger-sm btn-action" data-action="remove-dev" data-mount="${mountPoint}" data-devpath="${devMatch[4]}" data-index="${index}" title="Evakuasi data lalu lepas disk ini">Cabut</button>` : ''}
+                </div>
+            `;
+        }
+
+        if (mountPoint) {
+            devicesHtml += `
+                <div style="margin-top: 8px; border-top: 1px dashed #ccc; padding-top: 8px;">
+                    <button class="btn btn-secondary btn-sm btn-action" data-action="add-dev" data-mount="${mountPoint}" data-index="${index}">➕ Tambah Disk Baru ke Volume</button>
+                </div>
+            `;
+        } else {
+            devicesHtml += `<p style="color:orange; font-size:12px; margin-top:5px;">Mount volume untuk menambah/mencabut perangkat.</p>`;
+        }
+        devicesHtml += `</div>`;
+
+        // Render struktur utama kartu
         htmlOutput += `
             <div class="btrfs-card">
                 <h3>💽 ${label}</h3>
                 <p><b>UUID:</b> <span class="btrfs-code">${uuid}</span></p>
-                <p><b>Lokasi Perangkat Utama:</b> <span class="btrfs-code">${path}</span></p>
-                <p><b>Kapasitas:</b> ${size}</p>
                 <p><b>Status Mount:</b> ${mountPoint ? `<span style="color:green; font-weight:bold;">Mounted di ${mountPoint}</span>` : `<span style="color:orange;">Not Mounted (Terkunci)</span>`}</p>
+                
+                ${devicesHtml}
                 
                 ${mountPoint ? `
                     <div class="subvol-section">
@@ -100,7 +125,7 @@ function parseBtrfsOutput(rawData) {
 }
 
 // ==========================================
-// 3. EVENT DELEGATION (Subvol, Snapshot, Restore & Maint)
+// 3. EVENT DELEGATION
 // ==========================================
 document.getElementById("disk-container").addEventListener("click", function(e) {
     
@@ -125,13 +150,11 @@ document.getElementById("disk-container").addEventListener("click", function(e) 
     if (e.target.classList.contains("btn-snapshot-root")) {
         takeSnapshot(e.target.getAttribute("data-mount"), "", e.target.getAttribute("data-index"));
     }
-
-    // --- AKSI RESTORE (BARU) ---
     if (e.target.classList.contains("btn-restore-subvol")) {
         restoreSnapshot(e.target.getAttribute("data-mount"), e.target.getAttribute("data-path"), e.target.getAttribute("data-index"));
     }
 
-    // --- AKSI MAINTENANCE ---
+    // --- AKSI MAINTENANCE & MANAJEMEN PERANGKAT ---
     if (e.target.classList.contains("btn-action")) {
         const action = e.target.getAttribute("data-action");
         const mountPoint = e.target.getAttribute("data-mount");
@@ -170,28 +193,52 @@ document.getElementById("disk-container").addEventListener("click", function(e) 
                     .catch(err => consoleBox.innerText = "Error: " + err.message);
             }
         }
+        // FASE 4: LOGIKA TAMBAH/CABUT PERANGKAT
+        else if (action === "remove-dev") {
+            const devPath = e.target.getAttribute("data-devpath");
+            if(confirm(`PERINGATAN: Anda akan mencabut ${devPath} dari ${mountPoint}.\n\nKernel akan mengevakuasi semua data ke disk lain yang tersisa di dalam volume ini. Proses ini bisa memakan waktu lama tergantung jumlah data Anda. Pastikan sisa disk memiliki ruang yang cukup.\n\nLanjutkan?`)) {
+                consoleBox.innerText = `Memulai evakuasi data dan pelepasan ${devPath} (Proses ini mungkin memakan waktu)...`;
+                cockpit.spawn(["btrfs", "device", "remove", devPath, mountPoint], { superuser: "require" })
+                    .then(out => {
+                        consoleBox.innerText = `Sukses mencabut ${devPath} dari volume.\n` + out;
+                        fetchBtrfsData(); // Segarkan topologi
+                    })
+                    .catch(err => consoleBox.innerText = "Gagal mencabut perangkat: " + err.message);
+            }
+        }
+        else if (action === "add-dev") {
+            const newDev = prompt(`TAMBAH PERANGKAT BARU\n\nMasukkan path perangkat blok (disk/partisi) yang KOSONG (contoh: /dev/sdd atau /dev/sde1):\n\nAWAS: Pastikan disk tersebut tidak memiliki data, karena akan diformat dan digabungkan ke ${mountPoint}!`);
+            if(newDev) {
+                consoleBox.innerText = `Menambahkan ${newDev.trim()} ke volume...`;
+                // Parameter -f memaksa btrfs untuk menimpa partisi lama di disk target
+                cockpit.spawn(["btrfs", "device", "add", "-f", newDev.trim(), mountPoint], { superuser: "require" })
+                    .then(out => {
+                        consoleBox.innerText = `Sukses menambahkan ${newDev.trim()}.\nSangat disarankan untuk menjalankan fitur 'Balance' setelah ini agar data tersebar merata.`;
+                        fetchBtrfsData(); // Segarkan topologi
+                    })
+                    .catch(err => consoleBox.innerText = "Gagal menambahkan perangkat: " + err.message);
+            }
+        }
     }
 });
 
-// --- FUNGSI RESTORE/CLONE SNAPSHOT (BARU) ---
+// --- FUNGSI RESTORE/CLONE SNAPSHOT ---
 function restoreSnapshot(mountPoint, snapPath, index) {
-    // Menebak nama asli untuk default input (menghapus format _snap_...)
     let defaultTarget = snapPath.split("_snap_")[0];
-    if (defaultTarget === snapPath) defaultTarget = snapPath + "_restored"; // Jika format namanya berbeda
+    if (defaultTarget === snapPath) defaultTarget = snapPath + "_restored"; 
     
-    const targetName = prompt(`🔄 RESTORE / CLONE SNAPSHOT\n\nSumber Data: ${snapPath}\n\nMasukkan nama subvolume target untuk menampung hasil restore ini.\n(PENTING: Jika Anda me-restore 'tesvolume', pastikan 'tesvolume' yang lama sudah Anda ganti namanya menjadi 'tesvolume_rusak' atau dihapus terlebih dahulu agar namanya tidak bentrok):`, defaultTarget);
-    
-    if (!targetName) return; // Dibatalkan pengguna
+    const targetName = prompt(`🔄 RESTORE / CLONE SNAPSHOT\n\nSumber Data: ${snapPath}\n\nMasukkan nama subvolume target untuk menampung hasil restore ini:`, defaultTarget);
+    if (!targetName) return;
 
     const fullSourcePath = mountPoint === "/" ? `/${snapPath}` : `${mountPoint}/${snapPath}`;
     const fullTargetPath = mountPoint === "/" ? `/${targetName}` : `${mountPoint}/${targetName}`;
 
     cockpit.spawn(["btrfs", "subvolume", "snapshot", fullSourcePath, fullTargetPath], { superuser: "require" })
         .then(() => {
-            alert(`✅ Sukses! Data dari '${snapPath}' berhasil di-restore/di-clone menjadi subvolume baru bernama '${targetName}'.`);
+            alert(`✅ Sukses! Data dari '${snapPath}' berhasil di-restore/di-clone.`);
             loadSubvolumes(mountPoint, index);
         })
-        .catch(err => alert("❌ Gagal melakukan restore:\n" + err.message + "\n\nSaran: Pastikan nama target yang Anda masukkan belum ada di dalam daftar subvolume."));
+        .catch(err => alert("❌ Gagal melakukan restore:\n" + err.message));
 }
 
 // --- FUNGSI SNAPSHOT DASAR ---
@@ -200,7 +247,6 @@ function takeSnapshot(mountPoint, subvolPath, index) {
     const defaultName = subvolPath ? `${subvolPath.split("/").pop()}_snap_${dateStr}` : `root_snap_${dateStr}`;
     
     const snapName = prompt(`Masukkan nama untuk snapshot baru:\n(Sumber: ${subvolPath || "Root Volume"})`, defaultName);
-    
     if (!snapName) return; 
 
     const fullSourcePath = subvolPath ? (mountPoint === "/" ? `/${subvolPath}` : `${mountPoint}/${subvolPath}`) : mountPoint;
@@ -223,7 +269,6 @@ function loadSubvolumes(mountPoint, index) {
                 if (line.trim() === "") return;
                 const pathMatch = line.match(/path\s+(.+)$/);
                 if (pathMatch) {
-                    // Perubahan: Penambahan tombol Restore
                     html += `
                         <div class="subvol-item">
                             <span>📁 <b class="btrfs-code">${pathMatch[1]}</b></span>
@@ -259,7 +304,7 @@ function deleteSubvolume(mountPoint, subvolPath, index) {
 }
 
 // ==========================================
-// 4. LOGIKA PEMBUATAN RAID BTRFS BARU (Tetap Sama)
+// 4. LOGIKA PEMBUATAN RAID BTRFS BARU 
 // ==========================================
 const btnCreate = document.getElementById("btn-create-raid");
 const btnCancel = document.getElementById("btn-cancel-format");
