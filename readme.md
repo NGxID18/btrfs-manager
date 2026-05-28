@@ -27,15 +27,19 @@ Because this is a vanilla frontend extension, no build process is required. You 
 1. Open a terminal on your Linux server.
 2. Clone this repository into the user-specific Cockpit extensions folder:
    ```bash
-   git clone [https://github.com/NGxID18/btrfs-manager.git](https://github.com/NGxID18/btrfs-manager.git) ~/.local/share/cockpit/btrfs-manager
+   git clone [https://github.com/NGxID18/btrfs-manager] ~/.local/share/cockpit/btrfs-manager
    ```
    (Note: For a system-wide installation available to all users, clone it to /usr/share/cockpit/btrfs-manager instead. This requires root privileges).
+   ```bash
+   sudo git clone [https://github.com/NGxID18/btrfs-manager] /usr/share/cockpit/btrfs-manager
+   ```
 
 3. Ensure the directory has the correct permissions (optional but recommended):
-
-chmod -R 644 ~/.local/share/cockpit/btrfs-manager/*
-chmod 755 ~/.local/share/cockpit/btrfs-manager
-
+    ```bash
+    chmod -R 644 ~/.local/share/cockpit/btrfs-manager/*
+    chmod 755 ~/.local/share/cockpit/btrfs-manager
+    ```
+    
 4. Open your web browser, log in to your Cockpit interface, and refresh the page. The "BTRFS" menu will appear in the left navigation sidebar.
 
 
