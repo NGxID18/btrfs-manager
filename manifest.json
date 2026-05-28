@@ -1,0 +1,9 @@
+{
+  "version": 0,
+  "tools": {
+    "btrfs-manager": {
+      "label": "BTRFS",
+      "path": "index.html"
+    }
+  }
+}

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BTRFS Manager</title>
+    <meta charset="utf-8">
+    <link href="../base1/cockpit.css" type="text/css" rel="stylesheet">
+    <link href="style.css" type="text/css" rel="stylesheet">
+    <script src="../base1/cockpit.js"></script>
+    <script src="app.js" defer></script>
+</head>
+<body>
+    <h2>Manajemen BTRFS Native</h2>
+    <p>Kelola volume, topologi RAID, dan snapshot tingkat perangkat.</p>
+    
+    <hr class="btrfs-divider">
+
+    <div class="action-buttons">
+        <button class="btn btn-primary" id="btn-create-raid">Buat Volume RAID Baru</button>
+        <button class="btn btn-secondary" id="btn-refresh">Segarkan Data</button>
+    </div>
+
+    <div id="raid-form" class="btrfs-card raid-form-card hidden-element">
+        <h3>🛠 Buat Volume BTRFS Baru</h3>
+        
+        <div class="form-group">
+            <p><b>1. Pilih Disk Target:</b></p>
+            <div id="available-disks" class="available-disks-box">Mencari disk...</div>
+        </div>
+
+        <div class="form-group">
+            <p><b>2. Konfigurasi Volume:</b></p>
+            <label for="raid-profile" class="form-label">Profil Data:</label>
+            <select id="raid-profile" class="form-input" style="width: 200px;">
+                <option value="single">Single (1 Disk)</option>
+                <option value="raid1">RAID 1 (Mirror - Min 2 Disk)</option>
+                <option value="raid0">RAID 0 (Stripe - Min 2 Disk)</option>
+                <option value="raid10">RAID 10 (Stripe+Mirror - Min 4 Disk)</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="volume-label" class="form-label">Label Volume:</label>
+            <input type="text" id="volume-label" class="form-input" placeholder="Contoh: DataServer">
+        </div>
+        
+        <div class="form-group">
+            <button class="btn btn-primary" id="btn-execute-format">⚡ Format & Buat Volume</button>
+            <button class="btn btn-secondary" id="btn-cancel-format">Batal</button>
+        </div>
+        
+        <p id="format-status" class="btrfs-code hidden-element"></p>
+    </div>
+
+    <div id="disk-container">
+        <p>Memuat data dari sistem...</p>
+    </div>
+</body>
+</html>

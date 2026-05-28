@@ -1,0 +1,201 @@
+/* --- GAYA UTAMA --- */
+body { 
+    padding: 20px; 
+    font-family: "RedHatText", "Overpass", sans-serif;
+    background-color: #f5f5f5;
+}
+
+.btrfs-divider {
+    border: 0; 
+    border-top: 1px solid #ccc; 
+    margin: 20px 0;
+}
+
+.action-buttons {
+    margin-bottom: 20px;
+}
+
+/* --- KARTU DISK & FORMULIR --- */
+.btrfs-card {
+    background-color: #ffffff;
+    border: 1px solid #d2d2d2;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.btrfs-card h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 16px;
+}
+
+/* Kelas khusus untuk form RAID */
+.raid-form-card {
+    border-left: 4px solid #0066cc;
+}
+.hidden-element {
+    display: none;
+}
+.form-group {
+    margin-bottom: 15px;
+}
+.form-label {
+    display: inline-block; 
+    width: 120px;
+    font-weight: bold;
+}
+.form-input {
+    padding: 5px;
+}
+.available-disks-box {
+    background: #f9f9f9; 
+    padding: 10px; 
+    border-radius: 4px;
+}
+
+/* --- TEKS & TOMBOL --- */
+.btrfs-code {
+    background-color: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 13px;
+}
+
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: bold;
+    margin-right: 10px;
+}
+.btn-primary { background-color: #0066cc; color: white; }
+.btn-primary:hover { background-color: #004c99; }
+.btn-secondary { background-color: #e0e0e0; color: #333; }
+.btn-secondary:hover { background-color: #cccccc; }
+
+/* Gaya untuk list checkbox disk */
+.disk-label-item {
+    display: block;
+    margin-bottom: 8px;
+    cursor: pointer;
+    background-color: #ffffff;
+    padding: 5px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+}
+.disk-label-item:hover {
+    background-color: #f0f8ff;
+}
+
+/* --- SUBVOLUME ELEMENT --- */
+.subvol-section {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px dashed #ccc;
+}
+
+.subvol-list {
+    margin-top: 10px;
+    background: #fdfdfd;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.subvol-item {
+    padding: 8px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.subvol-item:last-child {
+    border-bottom: none;
+}
+
+.btn-danger-sm {
+    background-color: #a30000;
+    color: white;
+    padding: 3px 8px;
+    font-size: 11px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+.btn-danger-sm:hover { background-color: #820000; }
+
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+/* --- MAINTENANCE ELEMENT --- */
+.maintenance-section {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px dashed #ccc;
+    background-color: #fbfbfb;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.maintenance-section h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    color: #333;
+}
+
+.btn-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.status-console {
+    margin-top: 10px;
+    background-color: #1e1e1e;
+    color: #4af626;
+    padding: 10px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+}
+
+/* --- SNAPSHOT ELEMENT --- */
+.subvol-actions {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.btn-snapshot {
+    background-color: #007b83;
+    color: white;
+    padding: 3px 8px;
+    font-size: 11px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+.btn-snapshot:hover {
+    background-color: #005f65;
+}
+
+.btn-restore {
+    background-color: #d47a00;
+    color: white;
+    padding: 3px 8px;
+    font-size: 11px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+.btn-restore:hover {
+    background-color: #b36600;
+}
