@@ -9,10 +9,10 @@
     <script src="app.js" defer></script>
 </head>
 <body>
-    <h2>Native BTRFS Management</h2>
-    <p>Manage volumes, RAID topologies, subvolumes, and snapshots.</p>
-    
-    <hr class="btrfs-divider">
+    <div class="header-section">
+        <h2>Native BTRFS Management</h2>
+        <p class="subtitle">Manage volumes, RAID topologies, subvolumes, and snapshots.</p>
+    </div>
 
     <div class="action-buttons">
         <button class="btn btn-primary" id="btn-create-raid">Create New RAID Volume</button>
@@ -23,12 +23,12 @@
         <h3>🛠 Create New BTRFS Volume</h3>
         
         <div class="form-group">
-            <p><b>1. Select Target Disks:</b></p>
+            <p class="form-label-block">1. Select Target Disks:</p>
             <div id="available-disks" class="available-disks-box">Scanning block devices...</div>
         </div>
 
         <div class="form-group">
-            <p><b>2. Volume Configuration:</b></p>
+            <p class="form-label-block">2. Volume Configuration:</p>
             <label for="raid-profile" class="form-label">Data Profile:</label>
             <select id="raid-profile" class="form-input">
                 <option value="single">Single (1 Disk)</option>
@@ -43,16 +43,38 @@
             <input type="text" id="volume-label" class="form-input" placeholder="e.g., DataServer">
         </div>
         
-        <div class="form-group">
+        <div class="form-actions">
             <button class="btn btn-primary" id="btn-execute-format">⚡ Format & Create Volume</button>
             <button class="btn btn-secondary" id="btn-cancel-format">Cancel</button>
         </div>
         
-        <p id="format-status" class="btrfs-code hidden-element"></p>
+        <p id="format-status" class="status-console hidden-element" style="margin-top: 15px;"></p>
     </div>
 
     <div id="disk-container">
         <p>Loading system data...</p>
+    </div>
+
+    <div id="add-dev-modal" class="modal-overlay hidden-element">
+        <div class="modal-content">
+            <h3>➕ Add Device to Volume</h3>
+            <p>Select an empty disk to merge into: <strong id="modal-mount-target" style="color: var(--btn-primary);"></strong></p>
+            
+            <div class="form-group" style="margin: 20px 0;">
+                <select id="modal-disk-select" class="form-input" style="width: 100%; font-family: monospace; font-size: 14px;">
+                    <option value="">Scanning devices...</option>
+                </select>
+            </div>
+            
+            <div class="alert-box">
+                <strong>⚠️ Warning:</strong> All existing data and partitions on the selected disk will be permanently wiped!
+            </div>
+            
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="btn-close-modal">Cancel</button>
+                <button class="btn btn-primary" id="btn-confirm-add-dev" disabled>Add Device</button>
+            </div>
+        </div>
     </div>
 </body>
 </html>

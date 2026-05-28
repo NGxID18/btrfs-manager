@@ -1,50 +1,124 @@
-body { padding: 20px; font-family: "RedHatText", "Overpass", sans-serif; background-color: #f5f5f5; }
-.btrfs-divider { border: 0; border-top: 1px solid #ccc; margin: 20px 0; }
-.action-buttons { margin-bottom: 20px; }
+/* --- TEMA GLOBAL --- */
+:root {
+    --bg-main: #f0f4f8;
+    --bg-card: #ffffff;
+    --text-main: #2d3748;
+    --text-muted: #718096;
+    --border-color: #e2e8f0;
+    --border-dashed: #cbd5e0;
+    --btn-primary: #3182ce;
+    --btn-primary-hover: #2b6cb0;
+    --btn-secondary: #edf2f7;
+    --btn-secondary-hover: #e2e8f0;
+    --btn-secondary-text: #2d3748;
+    --btn-danger: #e53e3e;
+    --btn-danger-hover: #c53030;
+    --btn-snap: #38b2ac;
+    --btn-snap-hover: #319795;
+    --btn-restore: #dd6b20;
+    --btn-restore-hover: #c05621;
+    --code-bg: #edf2f7;
+    --console-bg: #1a202c;
+    --console-text: #48bb78;
+    --card-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+}
 
-/* Cards & Layout */
-.btrfs-card { background-color: #ffffff; border: 1px solid #d2d2d2; padding: 15px; margin-bottom: 15px; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-.btrfs-card h3 { margin: 0 0 10px 0; font-size: 16px; }
-.raid-form-card { border-left: 4px solid #0066cc; }
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-main: #111418;
+        --bg-card: #1e2227;
+        --text-main: #e2e8f0;
+        --text-muted: #a0aec0;
+        --border-color: #2d3748;
+        --border-dashed: #4a5568;
+        --btn-primary: #4299e1;
+        --btn-primary-hover: #3182ce;
+        --btn-secondary: #2d3748;
+        --btn-secondary-hover: #4a5568;
+        --btn-secondary-text: #e2e8f0;
+        --code-bg: #2d3748;
+        --console-bg: #000000;
+        --card-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+}
+
+/* --- TATA LETAK DASAR --- */
+body { 
+    padding: 30px; 
+    font-family: "RedHatText", "Inter", "Overpass", sans-serif; 
+    background-color: var(--bg-main); 
+    color: var(--text-main);
+    font-size: 15px;
+    line-height: 1.6;
+}
+.header-section { margin-bottom: 30px; }
+.header-section h2 { font-size: 26px; margin: 0 0 5px 0; }
+.subtitle { color: var(--text-muted); font-size: 16px; margin: 0; }
+.action-buttons { margin-bottom: 30px; }
 .hidden-element { display: none !important; }
-.form-group { margin-bottom: 15px; }
-.form-label { display: inline-block; width: 120px; font-weight: bold; }
-.form-input { padding: 5px; min-width: 200px; }
-.available-disks-box { background: #f9f9f9; padding: 10px; border-radius: 4px; }
-.btrfs-code { background-color: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: monospace; font-size: 13px; }
 
-/* Buttons */
-.btn { padding: 8px 16px; border: none; border-radius: 3px; cursor: pointer; font-weight: bold; margin-right: 10px; }
-.btn-primary { background-color: #0066cc; color: white; }
-.btn-primary:hover { background-color: #004c99; }
-.btn-secondary { background-color: #e0e0e0; color: #333; }
-.btn-secondary:hover { background-color: #cccccc; }
-.btn-sm { padding: 4px 10px; font-size: 12px; }
+/* --- KARTU (CARDS) --- */
+.btrfs-card { 
+    background-color: var(--bg-card); 
+    border: 1px solid var(--border-color); 
+    padding: 25px; 
+    margin-bottom: 25px; 
+    border-radius: 8px; 
+    box-shadow: var(--card-shadow); 
+}
+.btrfs-card h3 { margin: 0 0 20px 0; font-size: 20px; font-weight: 600; }
+.raid-form-card { border-top: 5px solid var(--btn-primary); }
 
-/* Mini Action Buttons */
-.btn-danger-sm, .btn-snapshot, .btn-restore { color: white; padding: 3px 8px; font-size: 11px; border: none; border-radius: 3px; cursor: pointer; }
-.btn-danger-sm { background-color: #a30000; }
-.btn-danger-sm:hover { background-color: #820000; }
-.btn-snapshot { background-color: #007b83; }
-.btn-snapshot:hover { background-color: #005f65; }
-.btn-restore { background-color: #d47a00; }
-.btn-restore:hover { background-color: #b36600; }
+/* Bagian Topologi, Subvol, Maint */
+.topo-box, .maintenance-section { background: var(--bg-main); border: 1px solid var(--border-color); padding: 20px; border-radius: 8px; margin: 20px 0; }
+.topo-title { margin-top: 0; font-weight: 600; font-size: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px; }
+.topo-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 15px; }
+.topo-add-btn { margin-top: 15px; border-top: 1px dashed var(--border-dashed); padding-top: 15px; }
+.subvol-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color); }
+.maintenance-section h4 { margin: 0 0 15px 0; font-size: 16px; }
 
-/* Lists & Topologies */
-.disk-label-item { display: block; margin-bottom: 8px; cursor: pointer; background-color: #ffffff; padding: 5px; border: 1px solid #e0e0e0; border-radius: 4px; }
-.disk-label-item:hover { background-color: #f0f8ff; }
-.subvol-section, .maintenance-section { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ccc; }
-.maintenance-section { background-color: #fbfbfb; padding: 10px; border-radius: 4px; }
-.maintenance-section h4 { margin: 0 0 10px 0; font-size: 14px; color: #333; }
-.subvol-list { margin-top: 10px; background: #fdfdfd; border: 1px solid #e0e0e0; border-radius: 4px; max-height: 200px; overflow-y: auto; }
-.subvol-item { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; }
+/* --- INPUT & TEKS --- */
+.form-group { margin-bottom: 20px; }
+.form-label-block { margin: 0 0 8px 0; font-weight: 600; }
+.form-label { display: inline-block; width: 140px; font-weight: 600; }
+.form-input { padding: 10px 14px; min-width: 250px; background-color: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; font-size: 15px; transition: border-color 0.2s; }
+.form-input:focus { border-color: var(--btn-primary); outline: none; }
+.form-actions { margin-top: 25px; }
+
+.btrfs-code { background-color: var(--code-bg); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 14px; color: var(--text-main); }
+.available-disks-box { background: var(--bg-main); padding: 15px; border-radius: 6px; border: 1px solid var(--border-color); }
+.disk-label-item { display: block; margin-bottom: 10px; cursor: pointer; background-color: var(--bg-card); padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; transition: all 0.2s; }
+.disk-label-item:hover { border-color: var(--btn-primary); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+
+/* --- TOMBOL (BUTTONS) --- */
+.btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 15px; margin-right: 10px; transition: 0.2s; }
+.btn-primary { background-color: var(--btn-primary); color: white; }
+.btn-primary:hover { background-color: var(--btn-primary-hover); }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-secondary { background-color: var(--btn-secondary); color: var(--btn-secondary-text); border: 1px solid var(--border-color); }
+.btn-secondary:hover { background-color: var(--btn-secondary-hover); }
+.btn-sm { padding: 6px 14px; font-size: 14px; }
+
+/* Tombol Aksi Mini */
+.btn-danger-sm, .btn-snapshot, .btn-restore { color: white; padding: 6px 12px; font-size: 13px; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: 0.2s; }
+.btn-danger-sm { background-color: var(--btn-danger); }
+.btn-danger-sm:hover { background-color: var(--btn-danger-hover); }
+.btn-snapshot { background-color: var(--btn-snap); }
+.btn-snapshot:hover { background-color: var(--btn-snap-hover); }
+.btn-restore { background-color: var(--btn-restore); }
+.btn-restore:hover { background-color: var(--btn-restore-hover); }
+
+/* --- LIST & CONSOLE --- */
+.subvol-list { margin-top: 15px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; max-height: 300px; overflow-y: auto; }
+.subvol-item { padding: 12px 15px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
 .subvol-item:last-child { border-bottom: none; }
-.subvol-actions { display: flex; gap: 5px; align-items: center; }
-.btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
-.status-console { margin-top: 10px; background-color: #1e1e1e; color: #4af626; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; white-space: pre-wrap; }
+.subvol-actions { display: flex; gap: 8px; align-items: center; }
+.btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
+.status-console { margin-top: 15px; background-color: var(--console-bg); color: var(--console-text); padding: 15px; border-radius: 6px; font-family: monospace; font-size: 14px; white-space: pre-wrap; line-height: 1.5; }
 
-/* Topology Additions */
-.topo-box { background: #fdfdfd; border: 1px solid #e0e0e0; padding: 10px; border-radius: 4px; margin: 10px 0; }
-.topo-title { margin-top: 0; font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 8px; }
-.topo-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
-.topo-add-btn { margin-top: 8px; border-top: 1px dashed #ccc; padding-top: 8px; }
+/* --- MODAL POP-UP --- */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(2px); }
+.modal-content { background: var(--bg-card); width: 100%; max-width: 500px; padding: 30px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid var(--border-color); }
+.modal-content h3 { margin-top: 0; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 15px; }
+.alert-box { background: rgba(229, 62, 62, 0.1); border-left: 4px solid var(--btn-danger); color: var(--btn-danger); padding: 12px 15px; border-radius: 4px; font-size: 14px; margin-bottom: 20px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
