@@ -21,6 +21,7 @@
     --console-bg: #1a202c;
     --console-text: #48bb78;
     --card-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 1px 3px rgba(0,0,0,0.1);
+    --hover-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -39,12 +40,30 @@
         --code-bg: #2d3748;
         --console-bg: #000000;
         --card-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        --hover-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);
     }
 }
 
+/* --- ANIMASI KEYFRAMES --- */
+@keyframes fadeInSlideUp {
+    from { opacity: 0; transform: translateY(15px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes modalPop {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+@keyframes pulseGlow {
+    0% { box-shadow: 0 0 0 0 rgba(49, 130, 206, 0.4); }
+    70% { box-shadow: 0 0 0 6px rgba(49, 130, 206, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(49, 130, 206, 0); }
+}
+
+.animated-view { animation: fadeInSlideUp 0.4s cubic-bezier(0.165, 0.84, 0.44, 1) forwards; }
+
 /* --- TATA LETAK DASAR --- */
 body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif; background-color: var(--bg-main); color: var(--text-main); font-size: 15px; line-height: 1.6; }
-.header-section { margin-bottom: 30px; }
+.header-section { margin-bottom: 30px; animation: fadeInSlideUp 0.5s ease; }
 .header-section h2 { font-size: 26px; margin: 0 0 5px 0; }
 .subtitle { color: var(--text-muted); font-size: 16px; margin: 0; }
 .action-buttons { margin-bottom: 30px; }
@@ -55,56 +74,65 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
     gap: 25px;
-    align-items: start; /* Mencegah kartu memanjang vertikal (stretch bug) */
+    align-items: start; 
 }
 
-.detail-grid {
+/* Kustomisasi Layout Asimetris Detail View */
+.detail-layout-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr; /* 50% Kiri, 50% Kanan */
     gap: 25px;
-    margin-bottom: 25px;
+    align-items: start;
 }
-@media (max-width: 900px) { .detail-grid { grid-template-columns: 1fr; } } /* Responsif detail page */
+.detail-left-col { display: flex; flex-direction: column; gap: 25px; }
+.detail-right-col { display: flex; flex-direction: column; height: 100%; }
+
+@media (max-width: 900px) { 
+    .detail-layout-grid { grid-template-columns: 1fr; } 
+}
 
 /* --- KARTU (CARDS) --- */
-.btrfs-card { background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 8px; box-shadow: var(--card-shadow); }
+.btrfs-card { 
+    background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 8px; 
+    box-shadow: var(--card-shadow); transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.btrfs-card.hoverable:hover { transform: translateY(-4px); box-shadow: var(--hover-shadow); }
 .btrfs-card h3 { margin: 0 0 15px 0; font-size: 20px; font-weight: 600; }
 .raid-form-card { border-top: 5px solid var(--btn-primary); }
 
-/* Bagian Topologi, Subvol, Maint */
-.topo-box, .maintenance-section { background: var(--bg-main); border: 1px solid var(--border-color); padding: 20px; border-radius: 8px; }
+/* Bagian Topologi & Maintenance di dalam Kartu */
 .topo-title { margin: 0 0 15px 0; font-weight: 600; font-size: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
 .topo-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 15px; }
 .topo-add-btn { margin-top: 15px; border-top: 1px dashed var(--border-dashed); padding-top: 15px; }
-.subvol-section { margin-top: 25px; padding-top: 25px; border-top: 1px solid var(--border-color); }
-.maintenance-section { margin-top: 25px; }
-.maintenance-section h4 { margin: 0 0 15px 0; font-size: 16px; }
+.maintenance-section h4 { margin: 0 0 15px 0; font-size: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
 
 /* --- INPUT & TEKS --- */
 .form-group { margin-bottom: 20px; }
 .form-label-block { margin: 0 0 8px 0; font-weight: 600; }
 .form-label { display: inline-block; width: 140px; font-weight: 600; }
-.form-input { padding: 10px 14px; min-width: 250px; background-color: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; font-size: 15px; transition: border-color 0.2s; }
-.form-input:focus { border-color: var(--btn-primary); outline: none; }
+.form-input { padding: 10px 14px; min-width: 250px; background-color: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; font-size: 15px; transition: border-color 0.2s, box-shadow 0.2s; }
+.form-input:focus { border-color: var(--btn-primary); box-shadow: 0 0 0 3px rgba(49,130,206,0.2); outline: none; }
 .form-actions { margin-top: 25px; }
 
 .btrfs-code { background-color: var(--code-bg); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 14px; color: var(--text-main); }
 .available-disks-box { background: var(--bg-main); padding: 15px; border-radius: 6px; border: 1px solid var(--border-color); }
 .disk-label-item { display: block; margin-bottom: 10px; cursor: pointer; background-color: var(--bg-card); padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; transition: all 0.2s; }
-.disk-label-item:hover { border-color: var(--btn-primary); box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+.disk-label-item:hover { border-color: var(--btn-primary); box-shadow: 0 2px 4px rgba(0,0,0,0.05); transform: translateX(5px); }
 
-/* --- TOMBOL (BUTTONS) --- */
-.btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 15px; margin-right: 10px; transition: 0.2s; }
+/* --- TOMBOL (BUTTONS) & ANIMASI KLIK --- */
+.btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 15px; margin-right: 10px; transition: all 0.2s; }
+.btn:active { transform: scale(0.97); }
 .btn-primary { background-color: var(--btn-primary); color: white; }
-.btn-primary:hover { background-color: var(--btn-primary-hover); }
-.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
-.btn-secondary { background-color: var(--btn-secondary); color: var(--btn-secondary-text); border: 1px solid var(--border-color); }
-.btn-secondary:hover { background-color: var(--btn-secondary-hover); }
+.btn-primary:hover { background-color: var(--btn-primary-hover); box-shadow: 0 4px 6px rgba(49,130,206,0.3); }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+.btn-secondary { background-color: var(--bg-card); color: var(--btn-secondary-text); border: 1px solid var(--border-color); }
+.btn-secondary:hover { background-color: var(--bg-main); border-color: var(--btn-primary); }
 .btn-sm { padding: 6px 14px; font-size: 14px; }
 .btn-block { width: 100%; text-align: center; margin-top: 15px; margin-right: 0; }
 
 /* Tombol Aksi Mini */
-.btn-danger-sm, .btn-snapshot, .btn-restore { color: white; padding: 6px 12px; font-size: 13px; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: 0.2s; }
+.btn-danger-sm, .btn-snapshot, .btn-restore { color: white; padding: 6px 12px; font-size: 13px; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
+.btn-danger-sm:active, .btn-snapshot:active, .btn-restore:active { transform: scale(0.95); }
 .btn-danger-sm { background-color: var(--btn-danger); }
 .btn-danger-sm:hover { background-color: var(--btn-danger-hover); }
 .btn-snapshot { background-color: var(--btn-snap); }
@@ -113,16 +141,17 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
 .btn-restore:hover { background-color: var(--btn-restore-hover); }
 
 /* --- LIST & CONSOLE --- */
-.subvol-list { margin-top: 15px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; max-height: 300px; overflow-y: auto; }
-.subvol-item { padding: 12px 15px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+.subvol-list-full { margin-top: 15px; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; max-height: 500px; overflow-y: auto; flex-grow: 1; }
+.subvol-item { padding: 12px 15px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; transition: background-color 0.2s; }
+.subvol-item:hover { background-color: var(--bg-card); }
 .subvol-item:last-child { border-bottom: none; }
 .subvol-actions { display: flex; gap: 8px; align-items: center; }
 .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
-.status-console { margin-top: 15px; background-color: var(--console-bg); color: var(--console-text); padding: 15px; border-radius: 6px; font-family: monospace; font-size: 14px; white-space: pre-wrap; line-height: 1.5; }
+.status-console { margin-top: 15px; background-color: var(--console-bg); color: var(--console-text); padding: 15px; border-radius: 6px; font-family: monospace; font-size: 14px; white-space: pre-wrap; line-height: 1.5; animation: fadeInSlideUp 0.3s ease; }
 
-/* --- MODAL POP-UP --- */
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(2px); }
-.modal-content { background: var(--bg-card); width: 100%; max-width: 500px; padding: 30px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid var(--border-color); }
+/* --- MODAL POP-UP (Animasi Muncul) --- */
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
+.modal-content { background: var(--bg-card); width: 100%; max-width: 500px; padding: 30px; border-radius: 10px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); border: 1px solid var(--border-color); animation: modalPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
 .modal-content h3 { margin-top: 0; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 15px; }
 .alert-box { background: rgba(229, 62, 62, 0.1); border-left: 4px solid var(--btn-danger); color: var(--btn-danger); padding: 12px 15px; border-radius: 4px; font-size: 14px; margin-bottom: 20px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }

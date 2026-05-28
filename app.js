@@ -1,5 +1,5 @@
 let mountMap = {};
-let parsedVolumesData = []; // Menyimpan state data BTRFS
+let parsedVolumesData = []; 
 
 const runCmd = (cmd) => cockpit.spawn(cmd, { superuser: "require" });
 const el = (id) => document.getElementById(id);
@@ -19,7 +19,7 @@ const getEmptyDevices = () => {
 // --- 1. DATA FETCHING & PARSING ---
 function fetchBtrfsData() {
     if(!el("view-master").classList.contains("hidden-element")) {
-        el("disk-container").innerHTML = "<p style='font-size: 18px; font-weight: bold;'>Loading system data...</p>";
+        el("disk-container").innerHTML = "<p style='font-size: 18px; font-weight: bold; animation: fadeInSlideUp 0.5s ease;'>Loading system data...</p>";
     }
 
     runCmd(["findmnt", "-A", "-J", "-t", "btrfs"])
@@ -43,7 +43,6 @@ function fetchBtrfsData() {
 function processBtrfsData(rawData) {
     const blocks = rawData.split(/Label:\s+/).filter(b => b.trim() !== "");
     
-    // Ekstraksi teks murni ke dalam Array of Objects
     parsedVolumesData = blocks.map((block, index) => {
         const labelMatch = block.match(/^(.*?)?\s+uuid:\s+([a-z0-9\-]+)/);
         const label = (labelMatch && labelMatch[1] && labelMatch[1].trim() !== "none") ? labelMatch[1].replace(/'/g, "").trim() : "System/Root (No Label)";
@@ -69,14 +68,13 @@ function processBtrfsData(rawData) {
 
     renderMasterView();
     
-    // Jika halaman detail sedang terbuka, render ulang data spesifik tersebut
     const activeIdx = el("detail-container").getAttribute("data-active-index");
     if(!el("view-detail").classList.contains("hidden-element") && activeIdx !== null) {
         renderDetailView(activeIdx);
     }
 }
 
-// --- 2. RENDER MASTER VIEW (HALAMAN AWAL) ---
+// --- 2. RENDER MASTER VIEW ---
 function renderMasterView() {
     const container = el("disk-container");
     if (!parsedVolumesData.length) {
@@ -84,19 +82,19 @@ function renderMasterView() {
         return;
     }
 
-    container.innerHTML = parsedVolumesData.map(vol => `
-        <div class="btrfs-card">
+    container.innerHTML = parsedVolumesData.map((vol, i) => `
+        <div class="btrfs-card hoverable animated-view" style="animation-delay: ${i * 0.1}s;">
             <h3>💽 ${vol.label}</h3>
             <p style="margin-bottom: 5px;"><b>UUID:</b> <span class="btrfs-code">${vol.uuid}</span></p>
             <p style="margin-bottom: 5px;"><b>Capacity:</b> ${vol.totalSize}</p>
             <p><b>Mount:</b> ${vol.mountPoint ? `<span style="color:#38a169; font-weight:bold;">${vol.mountPoint}</span>` : `<span style="color:#d69e2e; font-weight:bold;">Not Mounted</span>`}</p>
             
-            <button class="btn btn-secondary btn-block btn-action" data-action="open-detail" data-index="${vol.index}">⚙️ Manage Volume</button>
+            <button class="btn btn-secondary btn-block btn-action" data-action="open-detail" data-index="${vol.index}" style="margin-top:auto;">⚙️ Manage Volume</button>
         </div>
     `).join('');
 }
 
-// --- 3. RENDER DETAIL VIEW (HALAMAN MANAJEMEN) ---
+// --- 3. RENDER DETAIL VIEW (ASYMMETRICAL LAYOUT) ---
 function renderDetailView(idx) {
     const vol = parsedVolumesData.find(v => v.index == idx);
     if (!vol) return;
@@ -113,42 +111,55 @@ function renderDetailView(idx) {
                           : `<p style="color:orange; font-size:14px; margin-top:5px;">Mount volume to manage devices.</p>`;
 
     const html = `
-        <div class="btrfs-card" style="margin-bottom:0;">
-            <h2 style="margin-top:0; border-bottom: 1px solid var(--border-color); padding-bottom:15px;">💽 ${vol.label}</h2>
+        <h2 class="animated-view" style="margin-top:0; margin-bottom:25px;">💽 ${vol.label}</h2>
+        
+        <div class="detail-layout-grid">
             
-            <div class="detail-grid">
-                <div>
+            <div class="detail-left-col animated-view" style="animation-delay: 0.1s;">
+                
+                <div class="btrfs-card" style="margin-bottom: 0;">
+                    <h4 class="topo-title">ℹ️ Information & Topology</h4>
                     <p style="margin-bottom: 8px;"><b>UUID:</b> <span class="btrfs-code">${vol.uuid}</span></p>
                     <p style="margin-bottom: 8px;"><b>Capacity:</b> ${vol.totalSize}</p>
-                    <p><b>Mount Status:</b> ${vol.mountPoint ? `<span style="color:#38a169; font-weight:bold;">Mounted at ${vol.mountPoint}</span>` : `<span style="color:#d69e2e; font-weight:bold;">Not Mounted (Locked)</span>`}</p>
+                    <p style="margin-bottom: 25px;"><b>Mount Status:</b> ${vol.mountPoint ? `<span style="color:#38a169; font-weight:bold;">Mounted at ${vol.mountPoint}</span>` : `<span style="color:#d69e2e; font-weight:bold;">Not Mounted (Locked)</span>`}</p>
+                    
+                    <p class="topo-title" style="margin-top: 25px;">Physical Device Topology</p>
+                    <div>${devHtml}</div>
                 </div>
-                <div class="topo-box" style="margin: 0;">
-                    <p class="topo-title">Physical Device Topology</p>
-                    ${devHtml}
+
+                ${vol.mountPoint ? `
+                <div class="btrfs-card" style="margin-bottom: 0;">
+                    <div class="maintenance-section" style="margin:0; padding:0; border:none; background:transparent;">
+                        <h4>🛠 Maintenance & Optimization</h4>
+                        <div class="btn-group">
+                            <button class="btn btn-primary btn-sm btn-action" data-action="scrub-start" data-mount="${vol.mountPoint}">Start Scrub</button>
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="scrub-status" data-mount="${vol.mountPoint}">Scrub Status</button>
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="balance" data-mount="${vol.mountPoint}">Balance (50%)</button>
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="defrag" data-mount="${vol.mountPoint}">Defragment</button>
+                        </div>
+                        <div id="maint-console-${vol.mountPoint.replace(/\//g, '-')}" class="status-console hidden-element"></div>
+                    </div>
                 </div>
+                ` : ''}
+
             </div>
-            
-            ${vol.mountPoint ? `
-                <div class="subvol-section">
-                    <h4>📂 Subvolumes & Snapshots</h4>
+
+            <div class="detail-right-col animated-view" style="animation-delay: 0.2s;">
+                
+                <div class="btrfs-card" style="margin-bottom: 0; height: 100%; display: flex; flex-direction: column;">
+                    <h4 class="topo-title">📂 Subvolumes & Snapshots</h4>
+                    ${vol.mountPoint ? `
                     <div style="margin-bottom: 15px; display:flex; gap:10px; flex-wrap: wrap;">
                         <input type="text" id="new-subvol-${vol.index}" placeholder="New subvolume name..." class="form-input" style="flex-grow:1;">
                         <button class="btn btn-primary btn-sm btn-action" data-action="add-subvol" data-mount="${vol.mountPoint}" data-index="${vol.index}">➕ Add</button>
                         <button class="btn btn-secondary btn-sm btn-action" data-action="snap-root" data-mount="${vol.mountPoint}">📸 Snapshot Root</button>
                     </div>
-                    <div id="subvol-list-${vol.index}" class="subvol-list"><p style="padding:15px;">Loading subvolumes...</p></div>
+                    <div id="subvol-list-${vol.index}" class="subvol-list-full"><p style="padding:15px; animation: pulseGlow 2s infinite;">Loading subvolumes...</p></div>
+                    ` : '<p style="color:#d69e2e; font-weight:bold;">Mount this volume to access Subvolumes.</p>'}
                 </div>
-                <div class="maintenance-section">
-                    <h4>🛠 Maintenance & Optimization</h4>
-                    <div class="btn-group">
-                        <button class="btn btn-primary btn-sm btn-action" data-action="scrub-start" data-mount="${vol.mountPoint}">Start Scrub</button>
-                        <button class="btn btn-secondary btn-sm btn-action" data-action="scrub-status" data-mount="${vol.mountPoint}">Scrub Status</button>
-                        <button class="btn btn-secondary btn-sm btn-action" data-action="balance" data-mount="${vol.mountPoint}">Balance (50%)</button>
-                        <button class="btn btn-secondary btn-sm btn-action" data-action="defrag" data-mount="${vol.mountPoint}">Defragment</button>
-                    </div>
-                    <div id="maint-console-${vol.mountPoint.replace(/\//g, '-')}" class="status-console hidden-element"></div>
-                </div>
-            ` : '<div class="subvol-section"><p style="color:#d69e2e; font-weight:bold;">Mount this volume to access Subvolumes and Maintenance tools.</p></div>'}
+
+            </div>
+
         </div>
     `;
 
@@ -196,7 +207,7 @@ document.body.addEventListener("click", e => {
             const path = tgt.getAttribute("data-path");
             if(confirm(`Delete subvolume "${path}"?`)) {
                 runCmd(["btrfs", "subvolume", "delete", mount === "/" ? `/${path}` : `${mount}/${path}`])
-                    .then(() => loadSubvols(mount, tgt.closest('.subvol-list').id.split('-').pop()))
+                    .then(() => loadSubvols(mount, tgt.closest('.subvol-list-full').id.split('-').pop()))
                     .catch(err => alert("Failed:\n" + err.message));
             }
             break;
@@ -207,7 +218,7 @@ document.body.addEventListener("click", e => {
             takeSnapshot(mount, tgt.getAttribute("data-path"));
             break;
         case 'restore-subvol':
-            restoreSnapshot(mount, tgt.getAttribute("data-path"), tgt.closest('.subvol-list').id.split('-').pop());
+            restoreSnapshot(mount, tgt.getAttribute("data-path"), tgt.closest('.subvol-list-full').id.split('-').pop());
             break;
 
         // MAINTENANCE
@@ -253,6 +264,13 @@ el("btn-back-master").addEventListener("click", () => {
     el("view-detail").classList.add("hidden-element");
     el("view-master").classList.remove("hidden-element");
     el("detail-container").setAttribute("data-active-index", "");
+    
+    // Retrigger animasi di master view
+    document.querySelectorAll('#disk-container .btrfs-card').forEach(card => {
+        card.classList.remove('animated-view');
+        void card.offsetWidth; // Trigger reflow
+        card.classList.add('animated-view');
+    });
 });
 
 // --- MODAL ACTION LISTENERS ---
@@ -281,15 +299,15 @@ el("btn-confirm-add-dev").addEventListener("click", (e) => {
 function loadSubvols(mount, idx) {
     const list = el(`subvol-list-${idx}`);
     if(!list) return;
-    list.innerHTML = "<p style='padding:15px;'>Scanning subvolumes...</p>";
+    list.innerHTML = "<p style='padding:15px; font-style: italic;'>Scanning subvolumes...</p>";
 
     runCmd(["btrfs", "subvolume", "list", mount])
         .then(out => {
-            const html = out.trim().split("\n").filter(l => l.trim()).map(line => {
+            const html = out.trim().split("\n").filter(l => l.trim()).map((line, i) => {
                 const m = line.match(/path\s+(.+)$/);
                 if (!m) return "";
                 const p = m[1];
-                return `<div class="subvol-item">
+                return `<div class="subvol-item animated-view" style="animation-delay: ${i * 0.05}s;">
                             <span>📁 <b class="btrfs-code" style="font-size:14px;">${p}</b></span>
                             <div class="subvol-actions">
                                 <button class="btn-restore btn-action" data-action="restore-subvol" data-mount="${mount}" data-path="${p}">🔄 Restore</button>
@@ -352,7 +370,11 @@ el("btn-create-raid").addEventListener("click", () => {
 });
 
 el("btn-cancel-format").addEventListener("click", () => formRaid.classList.add("hidden-element"));
-el("btn-refresh").addEventListener("click", fetchBtrfsData);
+el("btn-refresh").addEventListener("click", () => {
+    el("btn-refresh").style.transform = "rotate(180deg)"; // Animasi putar
+    setTimeout(() => el("btn-refresh").style.transform = "none", 300);
+    fetchBtrfsData();
+});
 
 btnExec.addEventListener("click", () => {
     const disks = Array.from(document.querySelectorAll('input[name="tgt-disk"]:checked')).map(cb => cb.value);

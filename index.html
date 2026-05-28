@@ -15,18 +15,16 @@
     </div>
 
     <div id="view-master">
-        <div id="disk-container" class="disk-grid">
-            <p style="font-size: 18px; font-weight: bold;">Loading system data...</p>
-        </div>
+        <div id="disk-container" class="disk-grid"></div>
 
         <div style="margin: 40px 0; border-top: 2px dashed var(--border-dashed);"></div>
 
-        <div class="action-buttons">
+        <div class="action-buttons animated-view" style="animation-delay: 0.3s;">
             <button class="btn btn-primary" id="btn-create-raid">➕ Create New RAID Volume</button>
-            <button class="btn btn-secondary" id="btn-refresh">🔄 Refresh Data</button>
+            <button class="btn btn-secondary" id="btn-refresh" style="transition: transform 0.3s ease;">🔄 Refresh Data</button>
         </div>
 
-        <div id="raid-form" class="btrfs-card raid-form-card hidden-element">
+        <div id="raid-form" class="btrfs-card raid-form-card hidden-element animated-view">
             <h3>🛠 Create New BTRFS Volume</h3>
             <div class="form-group">
                 <p class="form-label-block">1. Select Target Disks:</p>
@@ -55,11 +53,10 @@
     </div>
 
     <div id="view-detail" class="hidden-element">
-        <div style="margin-bottom: 20px;">
-            <button class="btn btn-secondary" id="btn-back-master">⬅ Back to Volumes</button>
+        <div style="margin-bottom: 25px;">
+            <button class="btn btn-secondary btn-sm" id="btn-back-master" style="padding: 8px 16px;">⬅ Back to Volumes Dashboard</button>
         </div>
-        <div id="detail-container">
-            </div>
+        <div id="detail-container"></div>
     </div>
 
     <div id="add-dev-modal" class="modal-overlay hidden-element">
