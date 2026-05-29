@@ -6,8 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="../base1/cockpit.css" type="text/css" rel="stylesheet">
     <link href="style.css" type="text/css" rel="stylesheet">
+    
     <script src="../base1/cockpit.js"></script>
-    <script src="app.js" defer></script>
+    <script src="src/helper.js" defer></script>
+    <script src="src/engine.js" defer></script>
+    <script src="src/router.js" defer></script>
 </head>
 <body>
     <div class="header-section">
@@ -17,9 +20,7 @@
 
     <div id="view-master">
         <div id="disk-container" class="disk-grid"></div>
-
         <div class="divider"></div>
-
         <div class="action-buttons animated-view">
             <button class="btn btn-primary" id="btn-create-raid">Create New RAID Volume</button>
             <button class="btn btn-secondary" id="btn-refresh">Refresh Data</button>
@@ -81,7 +82,6 @@
         <div class="modal-content">
             <h3>Manage Subvolume</h3>
             <p class="mb-15">Path: <strong id="modal-subvol-path"></strong> <br><span class="text-muted" id="modal-subvol-id"></span></p>
-            
             <div class="modal-action-grid">
                 <button class="btn btn-secondary btn-block btn-action" data-action="subvol-ops" data-op="restore">Restore / Clone</button>
                 <button class="btn btn-secondary btn-block btn-action" data-action="subvol-ops" data-op="snap-subvol">Create Snapshot</button>
@@ -89,7 +89,6 @@
                 <button class="btn btn-secondary btn-block btn-action" data-action="subvol-ops" data-op="default">Set as Default Mount</button>
                 <button class="btn btn-danger btn-block btn-action" data-action="subvol-ops" data-op="del">Delete Permanently</button>
             </div>
-            
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="btn-close-subvol-modal">Close</button>
             </div>
