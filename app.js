@@ -4,6 +4,21 @@ let parsedVolumesData = [];
 const runCmd = (cmd) => cockpit.spawn(cmd, { superuser: "require" });
 const el = (id) => document.getElementById(id);
 
+// --- HELPER: BYTE PARSER & FORMATTER ---
+const parseSize = (sizeStr) => {
+    const m = sizeStr.match(/([0-9.]+)\s*([a-zA-Z]+)/);
+    if(!m) return 0;
+    const base = m[2].toUpperCase().replace("IB", "").replace("B", "");
+    const mult = {"K": 1024, "M": 1048576, "G": 1073741824, "T": 1099511627776}[base] || 1;
+    return parseFloat(m[1]) * mult;
+};
+
+const formatSize = (bytes) => {
+    if(bytes === 0 || isNaN(bytes)) return "0 B";
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(2) + " " + ["B", "KiB", "MiB", "GiB", "TiB"][i];
+};
+
 // --- CUSTOM NATIVE MODAL LOGIC ---
 let activeModalCallback = null;
 
@@ -102,8 +117,6 @@ function processBtrfsData(rawData) {
         const uuid = labelMatch ? labelMatch[3] : "Unknown";
         const pathMatch = block.match(/path\s+(\/dev\/\S+)/i);
         const firstPath = pathMatch ? pathMatch[1] : "";
-        const sizeMatch = block.match(/size\s+([0-9.]+\s?[GMKT]iB?)/i);
-        const totalSize = sizeMatch ? sizeMatch[1] : "Unknown";
 
         const mountPoint = mountMap[firstPath] || mountMap[`UUID=${uuid}`] || mountMap[firstPath + "1"] || mountMap[firstPath + "2"] || (label === "System/Root (No Label)" ? "/" : "");
 
@@ -114,39 +127,68 @@ function processBtrfsData(rawData) {
             devices.push({ id: match[1], size: match[2], path: match[4] });
         }
 
-        return { index, label, uuid, totalSize, mountPoint, devices, raidProfile: "Loading..." };
+        // PERBAIKAN BUG: Total Kapasitas Mentah (Sum of all drives)
+        const rawBytes = devices.reduce((sum, d) => sum + parseSize(d.size), 0);
+        const totalSize = formatSize(rawBytes);
+
+        return { index, label, uuid, totalSize, mountPoint, devices, raidProfile: "Loading...", usableSize: "Loading..." };
     });
 
     renderMasterView();
     const activeIdx = el("detail-container").getAttribute("data-active-index");
     if(!el("view-detail").classList.contains("hidden-element") && activeIdx !== null) renderDetailView(activeIdx);
 
+    // FETCH ASYNC UNTUK RAID PROFILE & USABLE SIZE
     parsedVolumesData.forEach((vol) => {
         if(vol.mountPoint) {
+            // 1. Ambil Profil RAID
             runCmd(["btrfs", "filesystem", "df", vol.mountPoint])
                 .then(dfOut => {
                     const dataMatch = dfOut.match(/Data,\s*(.*?):/i);
                     const metaMatch = dfOut.match(/Metadata,\s*(.*?):/i);
-                    
                     let profileStr = "";
                     if(dataMatch) profileStr = `<span class="btrfs-code">Data: ${dataMatch[1].toUpperCase()}</span>`;
                     if(metaMatch && dataMatch && metaMatch[1] !== dataMatch[1]) {
                         profileStr += ` <span class="btrfs-code" style="background:#e2e8f0; color:#4a5568;">Meta: ${metaMatch[1].toUpperCase()}</span>`;
                     }
-                    
                     vol.raidProfile = profileStr || "Single / Unknown";
-                    
-                    const currentDetailIdx = el("detail-container").getAttribute("data-active-index");
-                    if(!el("view-detail").classList.contains("hidden-element") && currentDetailIdx == vol.index) {
-                        const raidEl = el(`raid-display-${vol.index}`);
-                        if(raidEl) raidEl.innerHTML = vol.raidProfile;
+                    updateAsyncUIElements(vol);
+                }).catch(() => { vol.raidProfile = "Unable to read profile"; updateAsyncUIElements(vol); });
+            
+            // 2. Ambil Kapasitas Asli yang Bisa Dipakai (Berdasarkan Kalkulasi RAID Kernel)
+            runCmd(["df", "-B1", vol.mountPoint])
+                .then(dfBytes => {
+                    const lines = dfOut = dfBytes.trim().split("\n");
+                    if(lines.length > 1) {
+                        const parts = lines[1].trim().split(/\s+/);
+                        vol.usableSize = formatSize(parseInt(parts[1], 10)); // Indeks 1 adalah Total Size
+                        updateAsyncUIElements(vol);
                     }
-                })
-                .catch(() => { vol.raidProfile = "Unable to read profile"; });
+                }).catch(() => { vol.usableSize = "Unknown"; updateAsyncUIElements(vol); });
+
         } else {
-            vol.raidProfile = "Mount required to read profile";
+            vol.raidProfile = "Mount required";
+            vol.usableSize = "Locked (Not Mounted)";
+            updateAsyncUIElements(vol);
         }
     });
+}
+
+function updateAsyncUIElements(vol) {
+    const currentDetailIdx = el("detail-container").getAttribute("data-active-index");
+    const isDetailView = !el("view-detail").classList.contains("hidden-element");
+    
+    // Update Master View (jika Master View sedang tampil)
+    const masterUsable = document.getElementById(`master-usable-${vol.index}`);
+    if(masterUsable) masterUsable.innerHTML = vol.usableSize;
+
+    // Update Detail View (jika sedang dibuka)
+    if(isDetailView && currentDetailIdx == vol.index) {
+        const raidEl = el(`raid-display-${vol.index}`);
+        const usableEl = el(`usable-display-${vol.index}`);
+        if(raidEl) raidEl.innerHTML = vol.raidProfile;
+        if(usableEl) usableEl.innerHTML = vol.usableSize;
+    }
 }
 
 // --- 2. RENDER MASTER VIEW ---
@@ -158,7 +200,8 @@ function renderMasterView() {
         <div class="btrfs-card hoverable animated-view h-100-col">
             <h3>${vol.label}</h3>
             <p class="mb-5"><b>UUID:</b> <span class="btrfs-code">${vol.uuid}</span></p>
-            <p class="mb-5"><b>Capacity:</b> ${vol.totalSize}</p>
+            <p class="mb-5"><b>Raw Capacity:</b> ${vol.totalSize}</p>
+            <p class="mb-5"><b>Usable Space:</b> <span id="master-usable-${vol.index}">${vol.usableSize}</span></p>
             <p class="mb-15"><b>Mount Status:</b> ${vol.mountPoint ? 
                 `<span class="text-success">Mounted at ${vol.mountPoint}</span>` : 
                 `<span class="text-warning">Not Mounted</span> <button class="btn-primary btn-micro btn-action" data-action="mount-vol" data-uuid="${vol.uuid}">Mount</button>`}</p>
@@ -197,7 +240,8 @@ function renderDetailView(idx) {
                 <div class="btrfs-card">
                     <h4 class="section-title">System Information & Topology</h4>
                     <p class="mb-8"><b>UUID:</b> <span class="btrfs-code">${vol.uuid}</span></p>
-                    <p class="mb-8"><b>Total Capacity:</b> ${vol.totalSize}</p>
+                    <p class="mb-8"><b>Raw Capacity:</b> ${vol.totalSize} <span class="text-muted">(Physical Disks Combined)</span></p>
+                    <p class="mb-8"><b>Usable Space:</b> <span id="usable-display-${vol.index}" style="font-weight:bold;">${vol.usableSize}</span></p>
                     <p class="mb-8"><b>Active Profile:</b> <span id="raid-display-${vol.index}">${vol.raidProfile}</span></p>
                     <p class="mb-25"><b>Mount Status:</b> ${vol.mountPoint ? `<span class="text-success">Mounted at ${vol.mountPoint}</span>` : `<span class="text-warning">Not Mounted (Locked)</span>`}</p>
                     
@@ -293,7 +337,6 @@ document.body.addEventListener("click", e => {
             customSelect("Online RAID Profile Conversion", "Select a new target profile.\nWARNING: Ensure you have enough disks connected to the volume before proceeding.", raidOptions, "Convert Profile",
                 (newProfile) => {
                     if(newProfile && newProfile.trim() !== "") {
-                        // PENAMBAHAN FLAG "-f" (FORCE) UNTUK MELEWATI BLOKADE PENURUNAN INTEGRITAS METADATA OLEH KERNEL
                         runTask(`Starting online profile conversion to ${newProfile.toUpperCase()}. This process reorganizes blocks and may take a long time...`, 
                         ["btrfs", "balance", "start", "-f", "-dconvert=" + newProfile, "-mconvert=" + newProfile, mount], 
                         `Conversion to ${newProfile.toUpperCase()} successfully triggered!`);
