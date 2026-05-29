@@ -4,18 +4,28 @@ let parsedVolumesData = [];
 const runCmd = (cmd) => cockpit.spawn(cmd, { superuser: "require" });
 const el = (id) => document.getElementById(id);
 
-// --- CUSTOM NATIVE MODAL LOGIC ---
+// --- CUSTOM NATIVE MODAL LOGIC (UPGRADED) ---
 let activeModalCallback = null;
 
-function showCustomModal(title, message, isPrompt, defaultInput, confirmBtnText, callback) {
+function showCustomModal(title, message, isPrompt, inputType = "text", defaultInputOrOptions, confirmBtnText, callback) {
     el("generic-modal-title").innerText = title;
     el("generic-modal-message").innerText = message;
     el("generic-modal-confirm").innerText = confirmBtnText || "OK";
 
     if (isPrompt) {
         el("generic-modal-input-container").classList.remove("hidden-element");
-        el("generic-modal-input").value = defaultInput || "";
-        setTimeout(() => el("generic-modal-input").focus(), 100);
+        
+        if (inputType === "select") {
+            el("generic-modal-input").classList.add("hidden-element");
+            const selectEl = el("generic-modal-select");
+            selectEl.classList.remove("hidden-element");
+            selectEl.innerHTML = defaultInputOrOptions.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join("");
+        } else {
+            el("generic-modal-select").classList.add("hidden-element");
+            el("generic-modal-input").classList.remove("hidden-element");
+            el("generic-modal-input").value = defaultInputOrOptions || "";
+            setTimeout(() => el("generic-modal-input").focus(), 100);
+        }
     } else {
         el("generic-modal-input-container").classList.add("hidden-element");
     }
@@ -31,14 +41,16 @@ el("generic-modal-cancel").addEventListener("click", () => {
 
 el("generic-modal-confirm").addEventListener("click", () => {
     el("generic-modal").classList.add("hidden-element");
-    const val = el("generic-modal-input").value;
+    const isSelect = !el("generic-modal-select").classList.contains("hidden-element");
+    const val = isSelect ? el("generic-modal-select").value : el("generic-modal-input").value;
     if (activeModalCallback) activeModalCallback(val);
 });
 
-// Modal Helpers
-function customAlert(title, message) { showCustomModal(title, message, false, null, "OK", () => {}); }
-function customConfirm(title, message, confirmBtnText, onConfirm) { showCustomModal(title, message, false, null, confirmBtnText, onConfirm); }
-function customPrompt(title, message, defaultVal, confirmBtnText, onConfirm) { showCustomModal(title, message, true, defaultVal, confirmBtnText, onConfirm); }
+// Helper Functions
+function customAlert(title, message) { showCustomModal(title, message, false, "text", null, "OK", () => {}); }
+function customConfirm(title, message, confirmBtnText, onConfirm) { showCustomModal(title, message, false, "text", null, confirmBtnText, onConfirm); }
+function customPrompt(title, message, defaultVal, confirmBtnText, onConfirm) { showCustomModal(title, message, true, "text", defaultVal, confirmBtnText, onConfirm); }
+function customSelect(title, message, options, confirmBtnText, onConfirm) { showCustomModal(title, message, true, "select", options, confirmBtnText, onConfirm); }
 
 // --- DEVICE FETCHING ---
 const getEmptyDevices = () => {
@@ -55,7 +67,7 @@ const getEmptyDevices = () => {
 // --- 1. DATA FETCHING ---
 function fetchBtrfsData() {
     if(!el("view-master").classList.contains("hidden-element")) {
-        el("disk-container").innerHTML = "<p style='font-size: 18px; font-weight: bold; animation: fadeInSlideUp 0.5s ease;'>Scanning BTRFS storage system...</p>";
+        el("disk-container").innerHTML = "<p class='loading-text'>Scanning BTRFS storage system...</p>";
     }
 
     Promise.all([
@@ -74,7 +86,7 @@ function fetchBtrfsData() {
         } catch(e) {}
         processBtrfsData(btrfsData);
     })
-    .catch(err => el("disk-container").innerHTML = `<p style="color:var(--btn-danger); font-size:16px;">Failed to load BTRFS: ${err.message}</p>`);
+    .catch(err => el("disk-container").innerHTML = `<p class="text-danger mt-15">Failed to load BTRFS: ${err.message}</p>`);
 }
 
 function processBtrfsData(rawData) {
@@ -113,17 +125,17 @@ function processBtrfsData(rawData) {
 // --- 2. RENDER MASTER VIEW ---
 function renderMasterView() {
     const container = el("disk-container");
-    if (!parsedVolumesData.length) return container.innerHTML = "<p style='font-size:16px;'>No BTRFS filesystems detected on the system.</p>";
+    if (!parsedVolumesData.length) return container.innerHTML = "<p class='mt-15'>No BTRFS filesystems detected on the system.</p>";
 
-    container.innerHTML = parsedVolumesData.map((vol, i) => `
-        <div class="btrfs-card hoverable animated-view" style="animation-delay: ${i * 0.1}s;">
+    container.innerHTML = parsedVolumesData.map((vol) => `
+        <div class="btrfs-card hoverable animated-view h-100-col">
             <h3>${vol.label}</h3>
-            <p style="margin-bottom: 5px;"><b>UUID:</b> <span class="btrfs-code">${vol.uuid}</span></p>
-            <p style="margin-bottom: 5px;"><b>Capacity:</b> ${vol.totalSize}</p>
-            <p><b>Mount Status:</b> ${vol.mountPoint ? 
-                `<span style="color:#38a169; font-weight:bold;">Mounted at ${vol.mountPoint}</span>` : 
-                `<span style="color:#d69e2e; font-weight:bold; margin-right:10px;">Not Mounted</span> <button class="btn-primary btn-action" style="padding: 2px 8px; font-size: 12px; border:none; border-radius:3px; cursor:pointer;" data-action="mount-vol" data-uuid="${vol.uuid}">Mount</button>`}</p>
-            <button class="btn btn-secondary btn-block btn-action" data-action="open-detail" data-index="${vol.index}" style="margin-top:auto;">Manage Volume</button>
+            <p class="mb-5"><b>UUID:</b> <span class="btrfs-code">${vol.uuid}</span></p>
+            <p class="mb-5"><b>Capacity:</b> ${vol.totalSize}</p>
+            <p class="mb-15"><b>Mount Status:</b> ${vol.mountPoint ? 
+                `<span class="text-success">Mounted at ${vol.mountPoint}</span>` : 
+                `<span class="text-warning">Not Mounted</span> <button class="btn-primary btn-micro btn-action" data-action="mount-vol" data-uuid="${vol.uuid}">Mount</button>`}</p>
+            <button class="btn btn-secondary w-100 mt-auto btn-action" data-action="open-detail" data-index="${vol.index}">Manage Volume</button>
         </div>
     `).join('');
 }
@@ -135,15 +147,15 @@ function renderDetailView(idx) {
     el("detail-container").setAttribute("data-active-index", idx);
 
     let devHtml = vol.devices.map(d => `
-        <div class="topo-item"><span><span class="btrfs-code">${d.path}</span> <small style="color:var(--text-muted); font-size:13px; margin-left:5px;">(ID: ${d.id} | Size: ${d.size})</small></span>
-        ${vol.mountPoint ? `<button class="btn-danger-sm btn-action" data-action="remove-dev" data-mount="${vol.mountPoint}" data-devpath="${d.path}">Remove</button>` : ''}
+        <div class="topo-item"><span><span class="btrfs-code">${d.path}</span> <span class="text-muted">(ID: ${d.id} | Size: ${d.size})</span></span>
+        ${vol.mountPoint ? `<button class="btn btn-danger btn-sm btn-action" data-action="remove-dev" data-mount="${vol.mountPoint}" data-devpath="${d.path}">Remove</button>` : ''}
         </div>
     `).join("");
     
     let advancedTopoHtml = '';
     if (vol.mountPoint) {
         advancedTopoHtml = `
-            <div style="margin-top: 15px; display:flex; gap:10px; flex-wrap:wrap; border-top: 1px dashed var(--border-dashed); padding-top: 15px;">
+            <div class="advanced-topo-actions">
                 <button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${vol.mountPoint}">Add Disk</button>
                 <button class="btn btn-secondary btn-sm btn-action" data-action="convert-raid" data-mount="${vol.mountPoint}">Convert RAID Profile</button>
                 <button class="btn btn-secondary btn-sm btn-action" data-action="resize-vol" data-mount="${vol.mountPoint}">Resize Volume</button>
@@ -152,53 +164,51 @@ function renderDetailView(idx) {
     }
 
     const html = `
-        <h2 class="animated-view" style="margin-top:0; margin-bottom:25px;">${vol.label}</h2>
+        <h2 class="animated-view mb-25">${vol.label}</h2>
         <div class="detail-layout-grid">
-            <div class="detail-left-col animated-view" style="animation-delay: 0.1s;">
-                <div class="btrfs-card" style="margin-bottom: 0;">
-                    <h4 class="topo-title">System Information & Topology</h4>
-                    <p style="margin-bottom: 8px;"><b>UUID:</b> <span class="btrfs-code">${vol.uuid}</span></p>
-                    <p style="margin-bottom: 8px;"><b>Total Capacity:</b> ${vol.totalSize}</p>
-                    <p style="margin-bottom: 25px;"><b>Mount Status:</b> ${vol.mountPoint ? `<span style="color:#38a169; font-weight:bold;">Mounted at ${vol.mountPoint}</span>` : `<span style="color:#d69e2e; font-weight:bold;">Not Mounted (Locked)</span>`}</p>
+            <div class="detail-left-col animated-view">
+                <div class="btrfs-card">
+                    <h4 class="section-title">System Information & Topology</h4>
+                    <p class="mb-8"><b>UUID:</b> <span class="btrfs-code">${vol.uuid}</span></p>
+                    <p class="mb-8"><b>Total Capacity:</b> ${vol.totalSize}</p>
+                    <p class="mb-25"><b>Mount Status:</b> ${vol.mountPoint ? `<span class="text-success">Mounted at ${vol.mountPoint}</span>` : `<span class="text-warning">Not Mounted (Locked)</span>`}</p>
                     
-                    <p class="topo-title" style="margin-top: 25px;">Physical Device Topology</p>
+                    <p class="section-title mt-15">Physical Device Topology</p>
                     <div>${devHtml}</div>
                     ${advancedTopoHtml}
                 </div>
 
                 ${vol.mountPoint ? `
-                <div class="btrfs-card" style="margin-bottom: 0;">
-                    <div class="maintenance-section" style="margin:0; padding:0; border:none; background:transparent;">
-                        <h4 style="border-bottom: 1px solid var(--border-color); padding-bottom: 10px; margin-bottom: 15px;">Advanced Maintenance & Optimization</h4>
-                        <div class="btn-group">
-                            <button class="btn btn-primary btn-sm btn-action" data-action="scrub-start" data-mount="${vol.mountPoint}">Start Scrub</button>
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="scrub-status" data-mount="${vol.mountPoint}">Check Scrub</button>
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="balance" data-mount="${vol.mountPoint}">Balance (50%)</button>
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="defrag-compress" data-mount="${vol.mountPoint}">Defrag + Compress ZSTD</button>
-                        </div>
-                        <div id="maint-console-${vol.mountPoint.replace(/\//g, '-')}" class="status-console hidden-element"></div>
+                <div class="btrfs-card">
+                    <h4 class="section-title">Advanced Maintenance & Optimization</h4>
+                    <div class="flex-wrap-gap">
+                        <button class="btn btn-primary btn-sm btn-action" data-action="scrub-start" data-mount="${vol.mountPoint}">Start Scrub</button>
+                        <button class="btn btn-secondary btn-sm btn-action" data-action="scrub-status" data-mount="${vol.mountPoint}">Check Scrub</button>
+                        <button class="btn btn-secondary btn-sm btn-action" data-action="balance" data-mount="${vol.mountPoint}">Balance (50%)</button>
+                        <button class="btn btn-secondary btn-sm btn-action" data-action="defrag-compress" data-mount="${vol.mountPoint}">Defrag + Compress ZSTD</button>
                     </div>
+                    <div id="maint-console-${vol.mountPoint.replace(/\//g, '-')}" class="status-console hidden-element"></div>
                 </div>
                 ` : `
-                <div style="padding: 15px; background: rgba(214, 158, 46, 0.1); border-left: 4px solid #d69e2e; border-radius: 4px;">
-                    <p style="margin: 0 0 10px 0; font-weight: bold; color: #d69e2e;">Volume Not Mounted</p>
-                    <p style="margin: 0 0 15px 0; font-size: 14px;">This volume must be mounted to access subvolumes and advanced maintenance features.</p>
+                <div class="warning-box">
+                    <p class="text-warning mb-5">Volume Not Mounted</p>
+                    <p class="mb-15 text-muted">This volume must be mounted to access subvolumes and advanced maintenance features.</p>
                     <button class="btn btn-primary btn-sm btn-action" data-action="mount-vol" data-uuid="${vol.uuid}">Mount Volume</button>
                 </div>
                 `}
             </div>
 
-            <div class="detail-right-col animated-view" style="animation-delay: 0.2s;">
-                <div class="btrfs-card" style="margin-bottom: 0; height: 100%; display: flex; flex-direction: column;">
-                    <h4 class="topo-title">Subvolume, Quota & Snapshot Management</h4>
+            <div class="detail-right-col animated-view">
+                <div class="btrfs-card h-100-col">
+                    <h4 class="section-title">Subvolume & Snapshot Management</h4>
                     ${vol.mountPoint ? `
-                    <div style="margin-bottom: 15px; display:flex; gap:10px; flex-wrap: wrap;">
-                        <input type="text" id="new-subvol-${vol.index}" placeholder="New subvolume name..." class="form-input" style="flex-grow:1;">
-                        <button class="btn btn-primary btn-sm btn-action" data-action="add-subvol" data-mount="${vol.mountPoint}" data-index="${vol.index}">Add</button>
+                    <div class="flex-wrap-gap mb-15">
+                        <input type="text" id="new-subvol-${vol.index}" placeholder="New subvolume name..." class="form-input flex-grow">
+                        <button class="btn btn-primary btn-sm btn-action" data-action="add-subvol" data-mount="${vol.mountPoint}" data-index="${vol.index}">Create</button>
                         <button class="btn btn-secondary btn-sm btn-action" data-action="snap-root" data-mount="${vol.mountPoint}">Snapshot Root</button>
                     </div>
-                    <div id="subvol-list-${vol.index}" class="subvol-list-full"><p style="padding:15px; color:var(--text-muted);">Loading subvolumes...</p></div>
-                    ` : '<p style="color:#d69e2e; font-weight:bold;">Mount this volume first to access Subvolumes.</p>'}
+                    <div id="subvol-list-${vol.index}" class="subvol-list-full"><p class="p-15-muted">Loading subvolumes...</p></div>
+                    ` : '<p class="text-warning">Mount this volume first to access Subvolumes.</p>'}
                 </div>
             </div>
         </div>
@@ -235,67 +245,65 @@ document.body.addEventListener("click", e => {
 
         case 'mount-vol':
             const volUuid = tgt.getAttribute("data-uuid");
-            customPrompt(
-                "Mount Volume", 
-                "Enter the directory location (mount point) to attach this volume.\nExample: /mnt/data or /media/btrfs\n\nIf the directory doesn't exist, the system will create it automatically.", 
-                `/mnt/btrfs_${volUuid.substring(0,8)}`, 
-                "Mount",
+            customPrompt("Mount Volume", "Enter the directory location (mount point) to attach this volume.\nExample: /mnt/data\n\nIf the directory doesn't exist, it will be created.", `/mnt/btrfs_${volUuid.substring(0,8)}`, "Mount",
                 (targetDir) => {
                     if (targetDir && targetDir.trim() !== "") {
-                        runCmd(["sh", "-c", `mkdir -p ${targetDir} && mount UUID=${volUuid} ${targetDir}`])
-                            .then(() => fetchBtrfsData())
-                            .catch(err => customAlert("Mount Failed", err.message));
+                        runCmd(["sh", "-c", `mkdir -p ${targetDir} && mount UUID=${volUuid} ${targetDir}`]).then(() => fetchBtrfsData()).catch(err => customAlert("Mount Failed", err.message));
                     }
                 }
             );
             break;
 
+        // DIUBAH MENJADI DROPDOWN SELECT
         case 'convert-raid':
-            customPrompt(
-                "Online RAID Profile Conversion",
-                "Select a new profile (single, raid0, raid1, raid10).\nWARNING: Ensure you have enough disks (e.g., RAID10 requires min 4 disks).\n\nEnter new profile:",
-                "raid10",
-                "Convert",
+            const raidOptions = [
+                { value: "single", label: "Single (1 Disk)" },
+                { value: "raid0", label: "RAID 0 (Stripe - Min 2 Disks)" },
+                { value: "raid1", label: "RAID 1 (Mirror - Min 2 Disks)" },
+                { value: "raid10", label: "RAID 10 (Stripe+Mirror - Min 4 Disks)" }
+            ];
+            
+            customSelect("Online RAID Profile Conversion", "Select a new target profile.\nWARNING: Ensure you have enough disks connected to the volume before proceeding.", raidOptions, "Convert Profile",
                 (newProfile) => {
                     if(newProfile && newProfile.trim() !== "") {
-                        runTask(`Starting online profile conversion to ${newProfile.toLowerCase()}. This process reorganizes blocks and may take a long time...`, 
-                        ["btrfs", "balance", "start", "-dconvert=" + newProfile.toLowerCase(), "-mconvert=" + newProfile.toLowerCase(), mount], 
-                        `Conversion to ${newProfile.toLowerCase()} successfully triggered!`);
+                        runTask(`Starting online profile conversion to ${newProfile.toUpperCase()}. This process reorganizes blocks and may take a long time...`, 
+                        ["btrfs", "balance", "start", "-dconvert=" + newProfile, "-mconvert=" + newProfile, mount], 
+                        `Conversion to ${newProfile.toUpperCase()} successfully triggered!`);
                     }
                 }
             );
             break;
             
         case 'resize-vol':
-            customPrompt(
-                "Online Volume Resize",
-                "Enter target size (e.g., 'max' to fill remaining disk, '+10G' to expand by 10GB, '-5G' to shrink).\n\nEnter size:",
-                "max",
-                "Resize",
-                (size) => {
-                    if(size && size.trim() !== "") {
-                        runTask(`Executing resize ${size}...`, ["btrfs", "filesystem", "resize", size, mount], `Successfully resized!`, true);
-                    }
-                }
+            customPrompt("Online Volume Resize", "Enter target size (e.g., 'max', '+10G', '-5G').", "max", "Resize",
+                (size) => { if(size && size.trim() !== "") runTask(`Executing resize ${size}...`, ["btrfs", "filesystem", "resize", size, mount], `Successfully resized!`, true); }
             );
             break;
 
         case 'defrag-compress':
-            customConfirm(
-                "Defragment & Compress",
-                `Start recursive defragmentation with Transparent Compression (ZSTD) on ${mount}?\nThis will compress existing data in the background.`,
-                "Start Defrag",
+            customConfirm("Defragment & Compress", `Start recursive defragmentation with Transparent Compression (ZSTD) on ${mount}?\nThis will compress existing data in the background.`, "Start Defrag",
                 () => runTask("Sending defrag & ZSTD compression command...", ["btrfs", "filesystem", "defragment", "-r", "-czstd", mount], "Command successfully sent to Kernel.")
             );
             break;
 
+        case 'manage-subvol':
+            el("manage-subvol-modal").classList.remove("hidden-element");
+            el("modal-subvol-path").innerText = "/" + tgt.getAttribute("data-path");
+            el("modal-subvol-id").innerText = "(ID: " + tgt.getAttribute("data-subid") + ")";
+
+            const modalBtns = document.querySelectorAll("#manage-subvol-modal .btn-action");
+            modalBtns.forEach(btn => {
+                btn.setAttribute("data-mount", tgt.getAttribute("data-mount"));
+                btn.setAttribute("data-path", tgt.getAttribute("data-path"));
+                btn.setAttribute("data-subid", tgt.getAttribute("data-subid"));
+                btn.setAttribute("data-index", tgt.getAttribute("data-index"));
+            });
+            break;
+
         case 'set-quota':
+            el("manage-subvol-modal").classList.add("hidden-element");
             const qPath = mount === "/" ? `/${tgt.getAttribute("data-path")}` : `${mount}/${tgt.getAttribute("data-path")}`;
-            customPrompt(
-                "Quota Management (QGROUPS)",
-                `Enter the maximum capacity limit for this subvolume (e.g., 50G, 100G, 500M).\n\nQuota limit for ${qPath}:`,
-                "50G",
-                "Apply Limit",
+            customPrompt("Quota Management", `Enter the maximum capacity limit for this subvolume (e.g., 50G, 100G, 500M).\n\nQuota limit for ${qPath}:`, "50G", "Apply Limit",
                 (limit) => {
                     if(limit && limit.trim() !== '') {
                         cBox.classList.remove("hidden-element"); cBox.innerText = "Enabling Quota support...";
@@ -311,16 +319,10 @@ document.body.addEventListener("click", e => {
             break;
 
         case 'set-default':
+            el("manage-subvol-modal").classList.add("hidden-element");
             const subId = tgt.getAttribute("data-subid");
-            customConfirm(
-                "Set Default Mount",
-                `Set Subvolume ID ${subId} as Default?\n\nIf enabled, when the disk is mounted, the system will automatically read this subvolume as its Root.`,
-                "Set as Default",
-                () => {
-                    runCmd(["btrfs", "subvolume", "set-default", subId, mount])
-                        .then(() => customAlert("Success", `ID ${subId} is now the default mount.`))
-                        .catch(err => customAlert("Failed", err.message));
-                }
+            customConfirm("Set Default Mount", `Set Subvolume ID ${subId} as Default?\nIf enabled, when the disk is mounted, the system will automatically read this subvolume as its Root.`, "Set as Default",
+                () => { runCmd(["btrfs", "subvolume", "set-default", subId, mount]).then(() => customAlert("Success", `ID ${subId} is now the default mount.`)).catch(err => customAlert("Failed", err.message)); }
             );
             break;
 
@@ -334,22 +336,24 @@ document.body.addEventListener("click", e => {
             break;
             
         case 'del-subvol':
+            el("manage-subvol-modal").classList.add("hidden-element");
             const path = tgt.getAttribute("data-path");
-            customConfirm(
-                "Delete Subvolume",
-                `Permanently delete subvolume "${path}"?`,
-                "Delete",
-                () => {
-                    runCmd(["btrfs", "subvolume", "delete", mount === "/" ? `/${path}` : `${mount}/${path}`])
-                        .then(() => loadSubvols(mount, tgt.closest('.subvol-list-full').id.split('-').pop()))
-                        .catch(err => customAlert("Failed", err.message));
-                }
+            customConfirm("Delete Subvolume", `Permanently delete subvolume "${path}"?`, "Delete",
+                () => { runCmd(["btrfs", "subvolume", "delete", mount === "/" ? `/${path}` : `${mount}/${path}`]).then(() => loadSubvols(mount, tgt.getAttribute("data-index"))).catch(err => customAlert("Failed", err.message)); }
             );
             break;
             
-        case 'snap-root': takeSnapshot(mount, ""); break;
-        case 'snap-subvol': takeSnapshot(mount, tgt.getAttribute("data-path")); break;
-        case 'restore-subvol': restoreSnapshot(mount, tgt.getAttribute("data-path"), tgt.closest('.subvol-list-full').id.split('-').pop()); break;
+        case 'snap-root': takeSnapshot(mount, "", tgt.getAttribute("data-index")); break;
+        
+        case 'snap-subvol': 
+            el("manage-subvol-modal").classList.add("hidden-element");
+            takeSnapshot(mount, tgt.getAttribute("data-path"), tgt.getAttribute("data-index")); 
+            break;
+            
+        case 'restore-subvol': 
+            el("manage-subvol-modal").classList.add("hidden-element");
+            restoreSnapshot(mount, tgt.getAttribute("data-path"), tgt.getAttribute("data-index")); 
+            break;
         
         case 'scrub-start': 
             customConfirm("Start Scrub", `Start Scrub on ${mount}?`, "Start", () => runTask("Starting scrub...", ["btrfs", "scrub", "start", mount], "(Click 'Check Scrub Status' to monitor progress)")); 
@@ -363,10 +367,7 @@ document.body.addEventListener("click", e => {
             
         case 'remove-dev':
             const dev = tgt.getAttribute("data-devpath");
-            customConfirm(
-                "Remove Device",
-                `WARNING: Evacuating and removing ${dev} from ${mount}.\nProceed?`,
-                "Remove",
+            customConfirm("Remove Device", `WARNING: Evacuating and removing ${dev} from ${mount}.\nProceed?`, "Remove",
                 () => runTask(`Evacuating ${dev}...`, ["btrfs", "device", "remove", dev, mount], `Successfully removed ${dev}.`, true)
             );
             break;
@@ -393,15 +394,11 @@ el("btn-back-master").addEventListener("click", () => {
     el("view-detail").classList.add("hidden-element");
     el("view-master").classList.remove("hidden-element");
     el("detail-container").setAttribute("data-active-index", "");
-    
-    document.querySelectorAll('#disk-container .btrfs-card').forEach(card => {
-        card.classList.remove('animated-view');
-        void card.offsetWidth; 
-        card.classList.add('animated-view');
-    });
 });
 
-el("btn-close-modal").addEventListener("click", () => el("add-dev-modal").classList.add("hidden-element"));
+el("btn-close-add-modal").addEventListener("click", () => el("add-dev-modal").classList.add("hidden-element"));
+el("btn-close-subvol-modal").addEventListener("click", () => el("manage-subvol-modal").classList.add("hidden-element"));
+
 el("btn-confirm-add-dev").addEventListener("click", (e) => {
     const mount = e.target.getAttribute("data-mount");
     const newDev = el("modal-disk-select").value;
@@ -417,52 +414,41 @@ el("btn-confirm-add-dev").addEventListener("click", (e) => {
         .catch(err => cBox.innerText = "Failed to add disk: " + err.message);
 });
 
-// --- 5. FETCH SUBVOLUME & SNAPSHOT LOGIC ---
+// --- 5. FETCH SUBVOLUME ---
 function loadSubvols(mount, idx) {
     const list = el(`subvol-list-${idx}`);
     if(!list) return;
-    list.innerHTML = "<p style='padding:15px; font-style: italic; color:var(--text-muted);'>Scanning subvolumes...</p>";
+    list.innerHTML = "<p class='mt-15 text-muted'>Scanning subvolumes...</p>";
 
     runCmd(["btrfs", "subvolume", "list", mount])
         .then(out => {
-            const html = out.trim().split("\n").filter(l => l.trim()).map((line, i) => {
+            const html = out.trim().split("\n").filter(l => l.trim()).map((line) => {
                 const m = line.match(/ID\s+(\d+).*path\s+(.+)$/i);
                 if (!m) return "";
                 const subId = m[1].trim();
                 const p = m[2].trim();
                 
-                return `<div class="subvol-item animated-view" style="animation-delay: ${i * 0.05}s; align-items: start; flex-direction: column; gap: 10px;">
-                            <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
-                                <span><b class="btrfs-code" style="font-size:14px; background:none; padding:0;">Path: /${p}</b> <small style="color:var(--text-muted);">(ID: ${subId})</small></span>
-                                <div class="subvol-actions">
-                                    <button class="btn-restore btn-action" data-action="restore-subvol" data-mount="${mount}" data-path="${p}">Restore / Clone</button>
-                                    <button class="btn-snapshot btn-action" data-action="snap-subvol" data-mount="${mount}" data-path="${p}">Snapshot</button>
-                                    <button class="btn-danger-sm btn-action" data-action="del-subvol" data-mount="${mount}" data-path="${p}">Delete</button>
-                                </div>
+                return `<div class="subvol-item animated-view">
+                            <div class="subvol-info">
+                                <span class="btrfs-code">/${p}</span>
+                                <span class="text-muted">ID: ${subId}</span>
                             </div>
-                            <div style="display: flex; gap: 5px;">
-                                <button class="btn-secondary btn-sm btn-action" data-action="set-quota" data-mount="${mount}" data-path="${p}" style="font-size:11px; padding:2px 6px;">Set Quota Limit</button>
-                                <button class="btn-secondary btn-sm btn-action" data-action="set-default" data-mount="${mount}" data-subid="${subId}" style="font-size:11px; padding:2px 6px;">Set as Default Mount</button>
-                            </div>
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="manage-subvol" data-mount="${mount}" data-path="${p}" data-subid="${subId}" data-index="${idx}">Manage</button>
                         </div>`;
             }).join("");
-            list.innerHTML = html || "<p style='padding:15px; color:var(--text-muted);'>No custom subvolumes created yet.</p>";
-        }).catch(err => list.innerHTML = `<p style='padding:15px; color:var(--btn-danger);'>Load failed: ${err.message}</p>`);
+            list.innerHTML = html || "<p class='mt-15 text-muted'>No custom subvolumes created yet.</p>";
+        }).catch(err => list.innerHTML = `<p class='text-danger mt-15'>Load failed: ${err.message}</p>`);
 }
 
-function takeSnapshot(mount, subvol) {
+function takeSnapshot(mount, subvol, idx) {
     const dt = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const defName = subvol ? `${subvol.split("/").pop()}_snap_${dt}` : `root_snap_${dt}`;
-    customPrompt(
-        "Create Snapshot",
-        `Enter new snapshot name:\n(Source: ${subvol || "Root Volume"})`,
-        defName,
-        "Create",
+    customPrompt("Create Snapshot", `Enter new snapshot name:\n(Source: ${subvol || "Root Volume"})`, defName, "Create",
         (name) => {
             if(name && name.trim() !== '') {
                 const src = subvol ? (mount === "/" ? `/${subvol}` : `${mount}/${subvol}`) : mount;
                 const dst = mount === "/" ? `/${name}` : `${mount}/${name}`;
-                runCmd(["btrfs", "subvolume", "snapshot", src, dst]).then(() => fetchBtrfsData()).catch(err => customAlert("Snapshot Failed", err.message));
+                runCmd(["btrfs", "subvolume", "snapshot", src, dst]).then(() => { if(idx) loadSubvols(mount, idx); else fetchBtrfsData(); }).catch(err => customAlert("Snapshot Failed", err.message));
             }
         }
     );
@@ -471,19 +457,12 @@ function takeSnapshot(mount, subvol) {
 function restoreSnapshot(mount, snap, idx) {
     let defTgt = snap.split("_snap_")[0];
     if (defTgt === snap) defTgt += "_restored"; 
-    
-    customPrompt(
-        "Restore / Clone",
-        `Enter target subvolume name:`,
-        defTgt,
-        "Restore",
+    customPrompt("Restore / Clone", `Enter target subvolume name:`, defTgt, "Restore",
         (tgt) => {
             if(tgt && tgt.trim() !== '') {
                 const src = mount === "/" ? `/${snap}` : `${mount}/${snap}`;
                 const dst = mount === "/" ? `/${tgt}` : `${mount}/${tgt}`;
-                runCmd(["btrfs", "subvolume", "snapshot", src, dst])
-                    .then(() => { customAlert("Success", "Restore successful!"); loadSubvols(mount, idx); })
-                    .catch(err => customAlert("Restore Failed", err.message));
+                runCmd(["btrfs", "subvolume", "snapshot", src, dst]).then(() => { customAlert("Success", "Restore successful!"); loadSubvols(mount, idx); }).catch(err => customAlert("Restore Failed", err.message));
             }
         }
     );
@@ -499,16 +478,13 @@ el("btn-create-raid").addEventListener("click", () => {
     el("available-disks").innerHTML = "Deep scanning block devices...";
     getEmptyDevices().then(safeDevs => {
         const html = safeDevs.map(d => `<label class="disk-label-item"><input type="checkbox" name="tgt-disk" value="/dev/${d.name}"> <span class="btrfs-code">/dev/${d.name}</span> - Capacity: ${d.size}</label>`).join("");
-        el("available-disks").innerHTML = html || "<span style='color:var(--btn-danger); font-weight:bold;'>No safe empty disks found.</span>";
+        el("available-disks").innerHTML = html || "<span class='text-danger'>No safe empty disks found.</span>";
         btnExec.disabled = !html;
     }).catch(err => el("available-disks").innerHTML = "Scan failed: " + err.message);
 });
 
 el("btn-cancel-format").addEventListener("click", () => formRaid.classList.add("hidden-element"));
-
-el("btn-refresh").addEventListener("click", () => { 
-    fetchBtrfsData(); 
-});
+el("btn-refresh").addEventListener("click", () => { fetchBtrfsData(); });
 
 btnExec.addEventListener("click", () => {
     const disks = Array.from(document.querySelectorAll('input[name="tgt-disk"]:checked')).map(cb => cb.value);

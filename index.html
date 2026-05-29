@@ -12,7 +12,7 @@
 <body>
     <div class="header-section">
         <h2>Native BTRFS Management</h2>
-        <p class="subtitle">Manage volumes, RAID topologies, subvolumes, and snapshots at the device level.</p>
+        <p class="subtitle">Manage volumes, RAID topologies, subvolumes, and snapshots.</p>
     </div>
 
     <div id="view-master">
@@ -20,7 +20,7 @@
 
         <div class="divider"></div>
 
-        <div class="action-buttons animated-view" style="animation-delay: 0.3s;">
+        <div class="action-buttons animated-view">
             <button class="btn btn-primary" id="btn-create-raid">Create New RAID Volume</button>
             <button class="btn btn-secondary" id="btn-refresh">Refresh Data</button>
         </div>
@@ -49,13 +49,13 @@
                 <button class="btn btn-primary" id="btn-execute-format">Format & Create Volume</button>
                 <button class="btn btn-secondary" id="btn-cancel-format">Cancel</button>
             </div>
-            <p id="format-status" class="status-console hidden-element" style="margin-top: 15px;"></p>
+            <p id="format-status" class="status-console hidden-element mt-15"></p>
         </div>
     </div>
 
     <div id="view-detail" class="hidden-element">
-        <div style="margin-bottom: 25px;">
-            <button class="btn btn-secondary btn-sm" id="btn-back-master" style="padding: 8px 16px;">Back to Dashboard</button>
+        <div class="mb-25">
+            <button class="btn btn-secondary btn-sm" id="btn-back-master">Back to Dashboard</button>
         </div>
         <div id="detail-container"></div>
     </div>
@@ -63,16 +63,35 @@
     <div id="add-dev-modal" class="modal-overlay hidden-element">
         <div class="modal-content">
             <h3>Add Device to Volume</h3>
-            <p>Select an empty disk to merge into: <strong id="modal-mount-target" style="color: var(--btn-primary);"></strong></p>
-            <div class="form-group" style="margin: 20px 0;">
-                <select id="modal-disk-select" class="form-input" style="width: 100%; font-family: monospace; font-size: 14px;"></select>
+            <p>Select an empty disk to merge into: <strong id="modal-mount-target" class="text-primary"></strong></p>
+            <div class="form-group mt-15">
+                <select id="modal-disk-select" class="form-input w-100"></select>
             </div>
-            <div class="alert-box">
+            <div class="warning-box mb-15 text-danger">
                 <strong>Warning:</strong> All existing data and partitions on the selected disk will be permanently wiped!
             </div>
             <div class="modal-actions">
-                <button class="btn btn-secondary" id="btn-close-modal">Cancel</button>
+                <button class="btn btn-secondary" id="btn-close-add-modal">Cancel</button>
                 <button class="btn btn-primary" id="btn-confirm-add-dev" disabled>Add Disk</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="manage-subvol-modal" class="modal-overlay hidden-element">
+        <div class="modal-content">
+            <h3>Manage Subvolume</h3>
+            <p class="mb-15">Path: <strong id="modal-subvol-path"></strong> <br><span class="text-muted" id="modal-subvol-id"></span></p>
+            
+            <div class="modal-action-grid">
+                <button class="btn btn-secondary btn-block btn-action" id="btn-modal-restore" data-action="restore-subvol">Restore / Clone</button>
+                <button class="btn btn-secondary btn-block btn-action" id="btn-modal-snapshot" data-action="snap-subvol">Create Snapshot</button>
+                <button class="btn btn-secondary btn-block btn-action" id="btn-modal-quota" data-action="set-quota">Set Quota Limit</button>
+                <button class="btn btn-secondary btn-block btn-action" id="btn-modal-default" data-action="set-default">Set as Default Mount</button>
+                <button class="btn btn-danger btn-block btn-action" id="btn-modal-delete" data-action="del-subvol">Delete Permanently</button>
+            </div>
+            
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="btn-close-subvol-modal">Close</button>
             </div>
         </div>
     </div>
@@ -80,9 +99,10 @@
     <div id="generic-modal" class="modal-overlay hidden-element">
         <div class="modal-content">
             <h3 id="generic-modal-title">Title</h3>
-            <p id="generic-modal-message" style="margin-bottom: 15px; white-space: pre-wrap; line-height: 1.5;"></p>
-            <div id="generic-modal-input-container" class="form-group hidden-element" style="margin-bottom: 20px;">
-                <input type="text" id="generic-modal-input" class="form-input" style="width: 100%;">
+            <p id="generic-modal-message" class="mb-15"></p>
+            <div id="generic-modal-input-container" class="form-group hidden-element mb-15">
+                <input type="text" id="generic-modal-input" class="form-input w-100">
+                <select id="generic-modal-select" class="form-input w-100 hidden-element"></select>
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="generic-modal-cancel">Cancel</button>
