@@ -4,7 +4,7 @@ let parsedVolumesData = [];
 const runCmd = (cmd) => cockpit.spawn(cmd, { superuser: "require" });
 const el = (id) => document.getElementById(id);
 
-// --- CUSTOM NATIVE MODAL LOGIC (UPGRADED) ---
+// --- CUSTOM NATIVE MODAL LOGIC ---
 let activeModalCallback = null;
 
 function showCustomModal(title, message, isPrompt, inputType = "text", defaultInputOrOptions, confirmBtnText, callback) {
@@ -46,7 +46,6 @@ el("generic-modal-confirm").addEventListener("click", () => {
     if (activeModalCallback) activeModalCallback(val);
 });
 
-// Helper Functions
 function customAlert(title, message) { showCustomModal(title, message, false, "text", null, "OK", () => {}); }
 function customConfirm(title, message, confirmBtnText, onConfirm) { showCustomModal(title, message, false, "text", null, confirmBtnText, onConfirm); }
 function customPrompt(title, message, defaultVal, confirmBtnText, onConfirm) { showCustomModal(title, message, true, "text", defaultVal, confirmBtnText, onConfirm); }
@@ -84,6 +83,7 @@ function fetchBtrfsData() {
             });
             if (parsed.filesystems) walk(parsed.filesystems);
         } catch(e) {}
+        
         processBtrfsData(btrfsData);
     })
     .catch(err => el("disk-container").innerHTML = `<p class="text-danger mt-15">Failed to load BTRFS: ${err.message}</p>`);
@@ -114,12 +114,39 @@ function processBtrfsData(rawData) {
             devices.push({ id: match[1], size: match[2], path: match[4] });
         }
 
-        return { index, label, uuid, totalSize, mountPoint, devices };
+        return { index, label, uuid, totalSize, mountPoint, devices, raidProfile: "Loading..." };
     });
 
     renderMasterView();
     const activeIdx = el("detail-container").getAttribute("data-active-index");
     if(!el("view-detail").classList.contains("hidden-element") && activeIdx !== null) renderDetailView(activeIdx);
+
+    parsedVolumesData.forEach((vol) => {
+        if(vol.mountPoint) {
+            runCmd(["btrfs", "filesystem", "df", vol.mountPoint])
+                .then(dfOut => {
+                    const dataMatch = dfOut.match(/Data,\s*(.*?):/i);
+                    const metaMatch = dfOut.match(/Metadata,\s*(.*?):/i);
+                    
+                    let profileStr = "";
+                    if(dataMatch) profileStr = `<span class="btrfs-code">Data: ${dataMatch[1].toUpperCase()}</span>`;
+                    if(metaMatch && dataMatch && metaMatch[1] !== dataMatch[1]) {
+                        profileStr += ` <span class="btrfs-code" style="background:#e2e8f0; color:#4a5568;">Meta: ${metaMatch[1].toUpperCase()}</span>`;
+                    }
+                    
+                    vol.raidProfile = profileStr || "Single / Unknown";
+                    
+                    const currentDetailIdx = el("detail-container").getAttribute("data-active-index");
+                    if(!el("view-detail").classList.contains("hidden-element") && currentDetailIdx == vol.index) {
+                        const raidEl = el(`raid-display-${vol.index}`);
+                        if(raidEl) raidEl.innerHTML = vol.raidProfile;
+                    }
+                })
+                .catch(() => { vol.raidProfile = "Unable to read profile"; });
+        } else {
+            vol.raidProfile = "Mount required to read profile";
+        }
+    });
 }
 
 // --- 2. RENDER MASTER VIEW ---
@@ -171,6 +198,7 @@ function renderDetailView(idx) {
                     <h4 class="section-title">System Information & Topology</h4>
                     <p class="mb-8"><b>UUID:</b> <span class="btrfs-code">${vol.uuid}</span></p>
                     <p class="mb-8"><b>Total Capacity:</b> ${vol.totalSize}</p>
+                    <p class="mb-8"><b>Active Profile:</b> <span id="raid-display-${vol.index}">${vol.raidProfile}</span></p>
                     <p class="mb-25"><b>Mount Status:</b> ${vol.mountPoint ? `<span class="text-success">Mounted at ${vol.mountPoint}</span>` : `<span class="text-warning">Not Mounted (Locked)</span>`}</p>
                     
                     <p class="section-title mt-15">Physical Device Topology</p>
@@ -254,7 +282,6 @@ document.body.addEventListener("click", e => {
             );
             break;
 
-        // DIUBAH MENJADI DROPDOWN SELECT
         case 'convert-raid':
             const raidOptions = [
                 { value: "single", label: "Single (1 Disk)" },
@@ -266,8 +293,9 @@ document.body.addEventListener("click", e => {
             customSelect("Online RAID Profile Conversion", "Select a new target profile.\nWARNING: Ensure you have enough disks connected to the volume before proceeding.", raidOptions, "Convert Profile",
                 (newProfile) => {
                     if(newProfile && newProfile.trim() !== "") {
+                        // PENAMBAHAN FLAG "-f" (FORCE) UNTUK MELEWATI BLOKADE PENURUNAN INTEGRITAS METADATA OLEH KERNEL
                         runTask(`Starting online profile conversion to ${newProfile.toUpperCase()}. This process reorganizes blocks and may take a long time...`, 
-                        ["btrfs", "balance", "start", "-dconvert=" + newProfile, "-mconvert=" + newProfile, mount], 
+                        ["btrfs", "balance", "start", "-f", "-dconvert=" + newProfile, "-mconvert=" + newProfile, mount], 
                         `Conversion to ${newProfile.toUpperCase()} successfully triggered!`);
                     }
                 }
