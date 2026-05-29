@@ -1,4 +1,4 @@
-/* --- TEMA GLOBAL --- */
+/* --- GLOBAL THEME --- */
 :root {
     --bg-main: #f0f4f8;
     --bg-card: #ffffff;
@@ -44,7 +44,7 @@
     }
 }
 
-/* --- ANIMASI KEYFRAMES --- */
+/* --- ANIMATIONS --- */
 @keyframes fadeInSlideUp {
     from { opacity: 0; transform: translateY(15px); }
     to { opacity: 1; transform: translateY(0); }
@@ -53,15 +53,10 @@
     from { opacity: 0; transform: scale(0.95); }
     to { opacity: 1; transform: scale(1); }
 }
-@keyframes pulseGlow {
-    0% { box-shadow: 0 0 0 0 rgba(49, 130, 206, 0.4); }
-    70% { box-shadow: 0 0 0 6px rgba(49, 130, 206, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(49, 130, 206, 0); }
-}
 
 .animated-view { animation: fadeInSlideUp 0.4s cubic-bezier(0.165, 0.84, 0.44, 1) forwards; }
 
-/* --- TATA LETAK DASAR --- */
+/* --- BASE LAYOUT --- */
 body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif; background-color: var(--bg-main); color: var(--text-main); font-size: 15px; line-height: 1.6; }
 .header-section { margin-bottom: 30px; animation: fadeInSlideUp 0.5s ease; }
 .header-section h2 { font-size: 26px; margin: 0 0 5px 0; }
@@ -77,10 +72,9 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
     align-items: start; 
 }
 
-/* Kustomisasi Layout Asimetris Detail View */
 .detail-layout-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr; /* 50% Kiri, 50% Kanan */
+    grid-template-columns: 1fr 1fr;
     gap: 25px;
     align-items: start;
 }
@@ -91,7 +85,7 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
     .detail-layout-grid { grid-template-columns: 1fr; } 
 }
 
-/* --- KARTU (CARDS) --- */
+/* --- CARDS --- */
 .btrfs-card { 
     background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 8px; 
     box-shadow: var(--card-shadow); transition: transform 0.3s ease, box-shadow 0.3s ease;
@@ -100,13 +94,12 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
 .btrfs-card h3 { margin: 0 0 15px 0; font-size: 20px; font-weight: 600; }
 .raid-form-card { border-top: 5px solid var(--btn-primary); }
 
-/* Bagian Topologi & Maintenance di dalam Kartu */
 .topo-title { margin: 0 0 15px 0; font-weight: 600; font-size: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
 .topo-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 15px; }
 .topo-add-btn { margin-top: 15px; border-top: 1px dashed var(--border-dashed); padding-top: 15px; }
 .maintenance-section h4 { margin: 0 0 15px 0; font-size: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
 
-/* --- INPUT & TEKS --- */
+/* --- INPUTS --- */
 .form-group { margin-bottom: 20px; }
 .form-label-block { margin: 0 0 8px 0; font-weight: 600; }
 .form-label { display: inline-block; width: 140px; font-weight: 600; }
@@ -119,7 +112,7 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
 .disk-label-item { display: block; margin-bottom: 10px; cursor: pointer; background-color: var(--bg-card); padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; transition: all 0.2s; }
 .disk-label-item:hover { border-color: var(--btn-primary); box-shadow: 0 2px 4px rgba(0,0,0,0.05); transform: translateX(5px); }
 
-/* --- TOMBOL (BUTTONS) & ANIMASI KLIK --- */
+/* --- BUTTONS --- */
 .btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 15px; margin-right: 10px; transition: all 0.2s; }
 .btn:active { transform: scale(0.97); }
 .btn-primary { background-color: var(--btn-primary); color: white; }
@@ -130,7 +123,6 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
 .btn-sm { padding: 6px 14px; font-size: 14px; }
 .btn-block { width: 100%; text-align: center; margin-top: 15px; margin-right: 0; }
 
-/* Tombol Aksi Mini */
 .btn-danger-sm, .btn-snapshot, .btn-restore { color: white; padding: 6px 12px; font-size: 13px; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
 .btn-danger-sm:active, .btn-snapshot:active, .btn-restore:active { transform: scale(0.95); }
 .btn-danger-sm { background-color: var(--btn-danger); }
@@ -149,7 +141,7 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
 .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
 .status-console { margin-top: 15px; background-color: var(--console-bg); color: var(--console-text); padding: 15px; border-radius: 6px; font-family: monospace; font-size: 14px; white-space: pre-wrap; line-height: 1.5; animation: fadeInSlideUp 0.3s ease; }
 
-/* --- MODAL POP-UP (Animasi Muncul) --- */
+/* --- CUSTOM MODALS --- */
 .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
 .modal-content { background: var(--bg-card); width: 100%; max-width: 500px; padding: 30px; border-radius: 10px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); border: 1px solid var(--border-color); animation: modalPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
 .modal-content h3 { margin-top: 0; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 15px; }

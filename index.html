@@ -11,21 +11,21 @@
 <body>
     <div class="header-section">
         <h2>Native BTRFS Management</h2>
-        <p class="subtitle">Manage volumes, RAID topologies, subvolumes, and snapshots.</p>
+        <p class="subtitle">Manage volumes, RAID topologies, subvolumes, and snapshots at the device level.</p>
     </div>
 
     <div id="view-master">
         <div id="disk-container" class="disk-grid"></div>
 
-        <div style="margin: 40px 0; border-top: 2px dashed var(--border-dashed);"></div>
+        <div style="margin: 60px 0 40px 0; border-top: 1px solid var(--border-dashed);"></div>
 
         <div class="action-buttons animated-view" style="animation-delay: 0.3s;">
-            <button class="btn btn-primary" id="btn-create-raid">➕ Create New RAID Volume</button>
-            <button class="btn btn-secondary" id="btn-refresh" style="transition: transform 0.3s ease;">🔄 Refresh Data</button>
+            <button class="btn btn-primary" id="btn-create-raid">Create New RAID Volume</button>
+            <button class="btn btn-secondary" id="btn-refresh">Refresh Data</button>
         </div>
 
         <div id="raid-form" class="btrfs-card raid-form-card hidden-element animated-view">
-            <h3>🛠 Create New BTRFS Volume</h3>
+            <h3>Create New BTRFS Volume</h3>
             <div class="form-group">
                 <p class="form-label-block">1. Select Target Disks:</p>
                 <div id="available-disks" class="available-disks-box">Scanning block devices...</div>
@@ -45,7 +45,7 @@
                 <input type="text" id="volume-label" class="form-input" placeholder="e.g., DataServer">
             </div>
             <div class="form-actions">
-                <button class="btn btn-primary" id="btn-execute-format">⚡ Format & Create Volume</button>
+                <button class="btn btn-primary" id="btn-execute-format">Format & Create Volume</button>
                 <button class="btn btn-secondary" id="btn-cancel-format">Cancel</button>
             </div>
             <p id="format-status" class="status-console hidden-element" style="margin-top: 15px;"></p>
@@ -54,24 +54,38 @@
 
     <div id="view-detail" class="hidden-element">
         <div style="margin-bottom: 25px;">
-            <button class="btn btn-secondary btn-sm" id="btn-back-master" style="padding: 8px 16px;">⬅ Back to Volumes Dashboard</button>
+            <button class="btn btn-secondary btn-sm" id="btn-back-master" style="padding: 8px 16px;">Back to Dashboard</button>
         </div>
         <div id="detail-container"></div>
     </div>
 
     <div id="add-dev-modal" class="modal-overlay hidden-element">
         <div class="modal-content">
-            <h3>➕ Add Device to Volume</h3>
+            <h3>Add Device to Volume</h3>
             <p>Select an empty disk to merge into: <strong id="modal-mount-target" style="color: var(--btn-primary);"></strong></p>
             <div class="form-group" style="margin: 20px 0;">
                 <select id="modal-disk-select" class="form-input" style="width: 100%; font-family: monospace; font-size: 14px;"></select>
             </div>
             <div class="alert-box">
-                <strong>⚠️ Warning:</strong> All existing data and partitions on the selected disk will be permanently wiped!
+                <strong>Warning:</strong> All existing data and partitions on the selected disk will be permanently wiped!
             </div>
             <div class="modal-actions">
                 <button class="btn btn-secondary" id="btn-close-modal">Cancel</button>
-                <button class="btn btn-primary" id="btn-confirm-add-dev" disabled>Add Device</button>
+                <button class="btn btn-primary" id="btn-confirm-add-dev" disabled>Add Disk</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="generic-modal" class="modal-overlay hidden-element">
+        <div class="modal-content">
+            <h3 id="generic-modal-title">Title</h3>
+            <p id="generic-modal-message" style="margin-bottom: 15px; white-space: pre-wrap; line-height: 1.5;"></p>
+            <div id="generic-modal-input-container" class="form-group hidden-element" style="margin-bottom: 20px;">
+                <input type="text" id="generic-modal-input" class="form-input" style="width: 100%;">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="generic-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="generic-modal-confirm">OK</button>
             </div>
         </div>
     </div>
