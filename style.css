@@ -57,17 +57,26 @@
 .animated-view { animation: fadeInSlideUp 0.4s cubic-bezier(0.165, 0.84, 0.44, 1) forwards; }
 
 /* --- BASE LAYOUT --- */
-body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif; background-color: var(--bg-main); color: var(--text-main); font-size: 15px; line-height: 1.6; }
+body { 
+    padding: 30px; 
+    font-family: "RedHatText", "Inter", "Overpass", sans-serif; 
+    background-color: var(--bg-main); 
+    color: var(--text-main); 
+    font-size: 15px; 
+    line-height: 1.6; 
+}
 .header-section { margin-bottom: 30px; animation: fadeInSlideUp 0.5s ease; }
 .header-section h2 { font-size: 26px; margin: 0 0 5px 0; }
 .subtitle { color: var(--text-muted); font-size: 16px; margin: 0; }
-.action-buttons { margin-bottom: 30px; }
+.action-buttons { margin-bottom: 30px; display: flex; gap: 15px; flex-wrap: wrap; }
 .hidden-element { display: none !important; }
+.divider { margin: 60px 0 40px 0; border-top: 1px solid var(--border-dashed); }
 
 /* --- GRID LAYOUT --- */
 .disk-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    /* min() memastikan kolom menyusut 100% jika layar lebih kecil dari 400px */
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr));
     gap: 25px;
     align-items: start; 
 }
@@ -81,10 +90,6 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
 .detail-left-col { display: flex; flex-direction: column; gap: 25px; }
 .detail-right-col { display: flex; flex-direction: column; height: 100%; }
 
-@media (max-width: 900px) { 
-    .detail-layout-grid { grid-template-columns: 1fr; } 
-}
-
 /* --- CARDS --- */
 .btrfs-card { 
     background-color: var(--bg-card); border: 1px solid var(--border-color); padding: 25px; border-radius: 8px; 
@@ -95,25 +100,28 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
 .raid-form-card { border-top: 5px solid var(--btn-primary); }
 
 .topo-title { margin: 0 0 15px 0; font-weight: 600; font-size: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
-.topo-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 15px; }
+.topo-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 15px; flex-wrap: wrap; gap: 10px;}
 .topo-add-btn { margin-top: 15px; border-top: 1px dashed var(--border-dashed); padding-top: 15px; }
 .maintenance-section h4 { margin: 0 0 15px 0; font-size: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
 
-/* --- INPUTS --- */
+/* --- INPUTS & TEXT --- */
 .form-group { margin-bottom: 20px; }
 .form-label-block { margin: 0 0 8px 0; font-weight: 600; }
 .form-label { display: inline-block; width: 140px; font-weight: 600; }
-.form-input { padding: 10px 14px; min-width: 250px; background-color: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; font-size: 15px; transition: border-color 0.2s, box-shadow 0.2s; }
+.form-input { padding: 10px 14px; min-width: 200px; width: 100%; max-width: 400px; background-color: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; font-size: 15px; box-sizing: border-box; }
 .form-input:focus { border-color: var(--btn-primary); box-shadow: 0 0 0 3px rgba(49,130,206,0.2); outline: none; }
-.form-actions { margin-top: 25px; }
+.form-actions { margin-top: 25px; display: flex; gap: 10px; flex-wrap: wrap; }
 
-.btrfs-code { background-color: var(--code-bg); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 14px; color: var(--text-main); }
+.btrfs-code { 
+    background-color: var(--code-bg); padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 14px; color: var(--text-main); 
+    word-wrap: break-word; word-break: break-all; /* Mencegah string panjang menembus layar HP */
+}
 .available-disks-box { background: var(--bg-main); padding: 15px; border-radius: 6px; border: 1px solid var(--border-color); }
-.disk-label-item { display: block; margin-bottom: 10px; cursor: pointer; background-color: var(--bg-card); padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; transition: all 0.2s; }
+.disk-label-item { display: block; margin-bottom: 10px; cursor: pointer; background-color: var(--bg-card); padding: 12px; border: 1px solid var(--border-color); border-radius: 6px; transition: all 0.2s; word-wrap: break-word;}
 .disk-label-item:hover { border-color: var(--btn-primary); box-shadow: 0 2px 4px rgba(0,0,0,0.05); transform: translateX(5px); }
 
 /* --- BUTTONS --- */
-.btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 15px; margin-right: 10px; transition: all 0.2s; }
+.btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 15px; transition: all 0.2s; text-align: center; }
 .btn:active { transform: scale(0.97); }
 .btn-primary { background-color: var(--btn-primary); color: white; }
 .btn-primary:hover { background-color: var(--btn-primary-hover); box-shadow: 0 4px 6px rgba(49,130,206,0.3); }
@@ -121,7 +129,7 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
 .btn-secondary { background-color: var(--bg-card); color: var(--btn-secondary-text); border: 1px solid var(--border-color); }
 .btn-secondary:hover { background-color: var(--bg-main); border-color: var(--btn-primary); }
 .btn-sm { padding: 6px 14px; font-size: 14px; }
-.btn-block { width: 100%; text-align: center; margin-top: 15px; margin-right: 0; }
+.btn-block { width: 100%; margin-top: 15px; }
 
 .btn-danger-sm, .btn-snapshot, .btn-restore { color: white; padding: 6px 12px; font-size: 13px; font-weight: 600; border: none; border-radius: 4px; cursor: pointer; transition: all 0.2s; }
 .btn-danger-sm:active, .btn-snapshot:active, .btn-restore:active { transform: scale(0.95); }
@@ -137,13 +145,37 @@ body { padding: 30px; font-family: "RedHatText", "Inter", "Overpass", sans-serif
 .subvol-item { padding: 12px 15px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; transition: background-color 0.2s; }
 .subvol-item:hover { background-color: var(--bg-card); }
 .subvol-item:last-child { border-bottom: none; }
-.subvol-actions { display: flex; gap: 8px; align-items: center; }
+.subvol-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .btn-group { display: flex; gap: 10px; flex-wrap: wrap; }
-.status-console { margin-top: 15px; background-color: var(--console-bg); color: var(--console-text); padding: 15px; border-radius: 6px; font-family: monospace; font-size: 14px; white-space: pre-wrap; line-height: 1.5; animation: fadeInSlideUp 0.3s ease; }
+.status-console { margin-top: 15px; background-color: var(--console-bg); color: var(--console-text); padding: 15px; border-radius: 6px; font-family: monospace; font-size: 14px; white-space: pre-wrap; line-height: 1.5; animation: fadeInSlideUp 0.3s ease; overflow-x: auto; }
 
 /* --- CUSTOM MODALS --- */
-.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); }
-.modal-content { background: var(--bg-card); width: 100%; max-width: 500px; padding: 30px; border-radius: 10px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); border: 1px solid var(--border-color); animation: modalPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-.modal-content h3 { margin-top: 0; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 15px; }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(3px); padding: 15px; box-sizing: border-box; }
+.modal-content { background: var(--bg-card); width: 100%; max-width: 500px; padding: 30px; border-radius: 10px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); border: 1px solid var(--border-color); animation: modalPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; max-height: 90vh; overflow-y: auto; }
+.modal-content h3 { margin-top: 0; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 15px; font-size: 1.25rem; }
 .alert-box { background: rgba(229, 62, 62, 0.1); border-left: 4px solid var(--btn-danger); color: var(--btn-danger); padding: 12px 15px; border-radius: 4px; font-size: 14px; margin-bottom: 20px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+
+/* --- MOBILE RESPONSIVENESS --- */
+@media (max-width: 900px) { 
+    .detail-layout-grid { grid-template-columns: 1fr; } 
+}
+
+@media (max-width: 600px) {
+    body { padding: 15px; }
+    .header-section h2 { font-size: 22px; }
+    .btrfs-card { padding: 15px; }
+    .divider { margin: 30px 0 20px 0; }
+    .action-buttons { flex-direction: column; width: 100%; }
+    .action-buttons .btn { width: 100%; margin: 0; }
+    
+    /* Penataan ulang List Subvolume untuk HP */
+    .subvol-item > div { flex-direction: column; align-items: flex-start !important; gap: 10px; }
+    .subvol-actions, .subvol-item > div:nth-child(2) { flex-wrap: wrap; width: 100%; }
+    .subvol-actions .btn-action { flex-grow: 1; text-align: center; }
+    
+    /* Penyesuaian Modal untuk HP */
+    .modal-content { padding: 20px; }
+    .modal-actions .btn { width: 100%; }
+    .form-actions .btn { width: 100%; }
+}
