@@ -62,7 +62,9 @@ window.App = {
             try {
                 const [dfOut, hOut] = await Promise.all([ cmd(["btrfs", "filesystem", "df", v.mountPoint]), cmd(["df", "-B1", v.mountPoint]) ]);
                 const dM = dfOut.match(/Data,\s*(.*?):/i), mM = dfOut.match(/Metadata,\s*(.*?):/i);
+                
                 v.raid = (dM ? `<span class="btrfs-code">Data: ${dM[1].toUpperCase()}</span>` : "") + (mM && dM && mM[1] !== dM[1] ? ` <span class="btrfs-code text-muted">Meta: ${mM[1].toUpperCase()}</span>` : "");
+                
                 const dfLines = hOut.trim().split("\n");
                 v.usable = dfLines.length > 1 ? formatSize(parseInt(dfLines[1].trim().split(/\s+/)[1], 10)) : "Unknown";
             } catch(e) { v.raid = "Error Reading Profile"; v.usable = "Error"; }
@@ -84,7 +86,7 @@ window.App = {
                 <p class="mb-5"><b>Hardware:</b> <span class="text-muted">${v.hwList}</span></p>
                 <p class="mb-5"><b>Raw Capacity:</b> ${v.rawSize}</p>
                 <p class="mb-5"><b>Usable Space:</b> <span id="master-usable-${v.idx}">${v.usable}</span></p>
-                <p class="mb-15"><b>Mount Status:</b> ${v.mountPoint ? `<span class="text-success">Mounted at ${v.mountPoint}</span>` : `<span class="text-warning">Not Mounted</span> <span class="text-muted" style="font-size: 13px;">(Mount via Storage menu)</span>`}</p>
+                <p class="mb-15"><b>Mount Status:</b> ${v.mountPoint ? `<span class="text-success">Mounted at ${v.mountPoint}</span>` : `<span class="text-warning">Not Mounted</span> <span class="text-muted text-sm">(Mount via Storage menu)</span>`}</p>
                 <button class="btn btn-secondary w-100 mt-auto btn-action" data-action="open-detail" data-index="${v.idx}">Manage Volume</button>
             </div>`).join('') : "<p class='mt-15'>No active BTRFS storage pools detected.</p>";
     },
@@ -104,21 +106,37 @@ window.App = {
                     <div class="btrfs-card">
                         <h4 class="section-title">System Information & Topology</h4>
                         <p class="mb-8"><b>UUID:</b> <span class="btrfs-code">${v.uuid}</span></p>
-                        <p class="mb-8"><b>Hardware Infrastructure:</b> <span class="text-primary" style="font-weight:bold;">${v.hwList}</span></p>
+                        <p class="mb-8"><b>Hardware Infrastructure:</b> <span class="text-primary fw-bold">${v.hwList}</span></p>
                         <p class="mb-8"><b>Raw Capacity:</b> ${v.rawSize} <span class="text-muted">(Physical Pool Combined)</span></p>
-                        <p class="mb-8"><b>Usable Space:</b> <span id="usable-display-${v.idx}" style="font-weight:bold;">${v.usable}</span></p>
+                        <p class="mb-8"><b>Usable Space:</b> <span id="usable-display-${v.idx}" class="fw-bold">${v.usable}</span></p>
                         <p class="mb-8"><b>Active Profile:</b> <span id="raid-display-${v.idx}">${v.raid}</span></p>
                         <p class="mb-25"><b>Mount Status:</b> ${v.mountPoint ? `<span class="text-success">Mounted at ${v.mountPoint}</span>` : `<span class="text-warning">Not Mounted (Locked)</span>`}</p>
                         <p class="section-title mt-15">Physical Device Topology</p>
                         <div>${devHtml}</div>
                         ${v.mountPoint ? `<div class="advanced-topo-actions"><button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${v.mountPoint}">Add Disk</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-raid" data-mount="${v.mountPoint}">Convert RAID Profile</button> <button class="btn btn-secondary btn-sm btn-action" data-action="resize-vol" data-mount="${v.mountPoint}">Resize Volume</button></div>` : ''}
                     </div>
-                    ${v.mountPoint ? `<div class="btrfs-card"><h4 class="section-title">Advanced Maintenance & Optimization</h4><div class="flex-wrap-gap"><button class="btn btn-primary btn-sm btn-action" data-action="scrub" data-mount="${v.mountPoint}">Scrub</button> <button class="btn btn-secondary btn-sm btn-action" data-action="scrub-status" data-mount="${v.mountPoint}">Check Scrub</button> <button class="btn btn-secondary btn-sm btn-action" data-action="balance" data-mount="${v.mountPoint}">Balance (50%)</button> <button class="btn btn-secondary btn-sm btn-action" data-action="defrag" data-mount="${v.mountPoint}">Defrag</button> <button class="btn btn-secondary btn-sm btn-action" data-action="defrag-zstd" data-mount="${v.mountPoint}">Defrag+ZSTD</button></div><div id="maint-console-${v.mountPoint.replace(/\//g, '-')}" class="status-console hidden-element"></div></div>` : `<div class="warning-box"><p class="text-warning mb-5">Volume Locked</p><p class="text-muted">Please mount this volume via Cockpit's native Storage page to unlock subvolume and kernel maintenance tasks.</p></div>`}
+                    ${v.mountPoint ? `<div class="btrfs-card">
+                        <h4 class="section-title">Advanced Maintenance & Optimization</h4>
+                        <div class="flex-wrap-gap">
+                            <button class="btn btn-primary btn-sm btn-action" data-action="scrub" data-mount="${v.mountPoint}">Scrub</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="scrub-status" data-mount="${v.mountPoint}">Check Scrub</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="balance" data-mount="${v.mountPoint}">Balance (50%)</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="defrag" data-mount="${v.mountPoint}">Defrag Only</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="defrag-zstd" data-mount="${v.mountPoint}">Defrag+ZSTD</button>
+                        </div>
+                        <div id="maint-console-${v.mountPoint.replace(/\//g, '-')}" class="status-console hidden-element"></div>
+                    </div>` : `<div class="warning-box"><p class="text-warning mb-5">Volume Locked</p><p class="text-muted">Please mount this volume via Cockpit's native Storage page to unlock subvolume and kernel maintenance tasks.</p></div>`}
                 </div>
                 <div class="detail-right-col animated-view">
                     <div class="btrfs-card h-100-col">
                         <h4 class="section-title">Subvolumes & Snapshots</h4>
-                        ${v.mountPoint ? `<div class="flex-wrap-gap mb-15"><input type="text" id="new-subvol-${v.idx}" placeholder="New subvolume name..." class="form-input flex-grow"><button class="btn btn-primary btn-sm btn-action" data-action="subvol-ops" data-op="create" data-mount="${v.mountPoint}" data-index="${v.idx}">Create</button> <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="snap-root" data-mount="${v.mountPoint}">Snap Root</button></div><div id="subvol-list-${v.idx}" class="subvol-list-full"><p class="p-15-muted">Loading subvolumes...</p></div>` : '<p class="text-warning">Mount pool filesystem to unlock subvolume tree operations.</p>'}
+                        ${v.mountPoint ? `<div class="flex-wrap-gap mb-15">
+                            <input type="text" id="new-subvol-${v.idx}" placeholder="New subvolume name..." class="form-input flex-grow">
+                            <button class="btn btn-primary btn-sm btn-action" data-action="subvol-ops" data-op="create" data-mount="${v.mountPoint}" data-index="${v.idx}">Create</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="snap-root" data-mount="${v.mountPoint}">Snap Root</button>
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="auto-snap" data-path="" data-mount="${v.mountPoint}">Auto-Snap</button>
+                        </div>
+                        <div id="subvol-list-${v.idx}" class="subvol-list-full"><p class="p-15-muted">Loading subvolumes...</p></div>` : '<p class="text-warning">Mount pool filesystem to unlock subvolume tree operations.</p>'}
                     </div>
                 </div>
             </div>`;

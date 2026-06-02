@@ -33,7 +33,7 @@ document.body.addEventListener("click", e => {
             case 'scrub': customConfirm("Start Scrub", `Start data scrubbing on ${mnt}?`, "Start", () => task("Scrubbing...", ["btrfs", "scrub", "start", mnt], "Started. Click 'Check Scrub' for progress.")); break;
             case 'scrub-status': task("Fetching scrub status...", ["btrfs", "scrub", "status", mnt], "Scrub Status Output:"); break;
             case 'balance': customConfirm("Start Balance", `Rebalance blocks (50% usage) on ${mnt}?`, "Start", () => task("Balancing...", ["btrfs", "balance", "start", "-dusage=50", mnt], "Done!")); break;
-            case 'defrag': customConfirm("Defragment Volume", `Run recursive defragmentation on ${mnt}?`, "Start", () => task("Defragging...", ["btrfs", "filesystem", "defragment", "-r", mnt], "Defrag command sent to kernel.")); break;
+            case 'defrag': customConfirm("Defragment Volume", `Run recursive defragmentation on ${mnt} without compression?`, "Start", () => task("Defragging...", ["btrfs", "filesystem", "defragment", "-r", mnt], "Defrag command sent to kernel.")); break;
             case 'defrag-zstd': customConfirm("Defrag & Compress", `Run recursive ZSTD defragmentation on ${mnt}?`, "Start", () => task("Defragging & Compressing...", ["btrfs", "filesystem", "defragment", "-r", "-czstd", mnt], "Defrag+ZSTD command sent to kernel.")); break;
             case 'remove-dev': customConfirm("Remove Device", `Evacuate and remove ${tgt.getAttribute("data-devpath")}?`, "Remove", () => task("Evacuating...", ["btrfs", "device", "remove", tgt.getAttribute("data-devpath"), mnt], "Removed!", true)); break;
             
@@ -56,10 +56,36 @@ document.body.addEventListener("click", e => {
             
             case 'subvol-ops':
                 if($("manage-subvol-modal")) $("manage-subvol-modal").classList.add("hidden-element");
-                const op = tgt.getAttribute("data-op"); const p = tgt.getAttribute("data-path"); const i = tgt.getAttribute("data-index");
+                const op = tgt.getAttribute("data-op"); const p = tgt.getAttribute("data-path") || ""; const i = tgt.getAttribute("data-index");
                 const sName = (dt) => p ? `${p.split("/").pop()}_snap_${dt}` : `root_snap_${dt}`;
                 
-                if(op === "create") { const nm = $(`new-subvol-${i}`)?.value.trim(); if(!nm) { customAlert("Error", "Name required!"); return;} cmd(["btrfs", "subvolume", "create", mnt === "/" ? `/${nm}` : `${mnt}/${nm}`]).then(()=>{ if($(`new-subvol-${i}`)) $(`new-subvol-${i}`).value = ""; App.fetchSubvols(mnt, i); }).catch(e=>customAlert("Failed", e.message)); }
+                if (op === "auto-snap") {
+                    const targetName = p ? `/${p}` : 'Root Volume';
+                    customSelect("Auto-Snapshot Schedule", `Select snapshot frequency for ${targetName}:\n(Snapshots saved in .snapshots hidden folder)`, [
+                        {v: "disable", l: "Disable Auto-Snapshot (Off)"},
+                        {v: "hourly", l: "Hourly (Every hour)"},
+                        {v: "daily", l: "Daily (Midnight)"},
+                        {v: "weekly", l: "Weekly (Sunday)"}
+                    ], "Apply", (freq) => {
+                        if(!freq) return;
+                        const safeName = p ? p.replace(/[^a-zA-Z0-9]/g, '_') : 'root_vol';
+                        const targetDir = p ? (mnt === "/" ? `/${p}` : `${mnt}/${p}`) : mnt;
+                        
+                        const cleanCmd = `rm -f /etc/cron.hourly/btrfs_${safeName} /etc/cron.daily/btrfs_${safeName} /etc/cron.weekly/btrfs_${safeName}`;
+
+                        if(freq === "disable") {
+                            cmd(["sh", "-c", cleanCmd]).then(() => customAlert("Success", "Auto-snapshot successfully disabled.")).catch(e => customAlert("Error", e.message));
+                        } else {
+                            const scriptContent = `#!/bin/bash\\nmkdir -p ${targetDir}/.snapshots\\nbtrfs subvolume snapshot -r ${targetDir} ${targetDir}/.snapshots/auto_\\$(date +\\%Y\\%m\\%d_\\%H\\%M)\\n`;
+                            const setupCmd = `${cleanCmd} && printf "${scriptContent}" > /etc/cron.${freq}/btrfs_${safeName} && chmod +x /etc/cron.${freq}/btrfs_${safeName}`;
+
+                            cmd(["sh", "-c", setupCmd])
+                                .then(() => customAlert("Success", `Auto-snapshot configured successfully!\nFrequency: ${freq.toUpperCase()}`))
+                                .catch(e => customAlert("Error", "Failed to configure schedule: " + e.message));
+                        }
+                    });
+                }
+                else if(op === "create") { const nm = $(`new-subvol-${i}`)?.value.trim(); if(!nm) { customAlert("Error", "Name required!"); return;} cmd(["btrfs", "subvolume", "create", mnt === "/" ? `/${nm}` : `${mnt}/${nm}`]).then(()=>{ if($(`new-subvol-${i}`)) $(`new-subvol-${i}`).value = ""; App.fetchSubvols(mnt, i); }).catch(e=>customAlert("Failed", e.message)); }
                 else if(op === "del") customConfirm("Delete", `Delete "${p}"?`, "Delete", () => cmd(["btrfs", "subvolume", "delete", mnt === "/" ? `/${p}` : `${mnt}/${p}`]).then(()=>App.fetchSubvols(mnt, i)).catch(e=>customAlert("Failed", e.message)));
                 else if(op.startsWith("snap")) customPrompt("Snapshot", "Name:", sName(new Date().toISOString().replace(/[:.]/g,"-").slice(0,19)), "Create", (n) => { if(n) cmd(["btrfs", "subvolume", "snapshot", p ? (mnt==="/"?`/${p}`:`${mnt}/${p}`) : mnt, mnt==="/"?`/${n}`:`${mnt}/${n}`]).then(()=>App.fetchSubvols(mnt, i||tgt.getAttribute("data-index"))).catch(e=>customAlert("Failed", e.message)); });
                 else if(op === "restore") customPrompt("Restore/Clone", "Target name:", p.split("_snap_")[0]+"_restored", "Restore", (n) => { if(n) cmd(["btrfs", "subvolume", "snapshot", mnt==="/"?`/${p}`:`${mnt}/${p}`, mnt==="/"?`/${n}`:`${mnt}/${n}`]).then(()=>App.fetchSubvols(mnt, i)).catch(e=>customAlert("Failed", e.message)); });
@@ -70,7 +96,6 @@ document.body.addEventListener("click", e => {
     } catch(err) { customAlert("Execution Error", err.message); }
 });
 
-// --- INIT STATIC LISTENERS ---
 on("generic-modal-cancel", "click", () => Modal.close());
 on("generic-modal-confirm", "click", () => Modal.confirm());
 on("btn-back-master", "click", () => { $("view-detail").classList.add("hidden-element"); $("view-master").classList.remove("hidden-element"); $("detail-container").setAttribute("data-active-index", ""); });
