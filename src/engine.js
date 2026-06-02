@@ -60,7 +60,10 @@ window.App = {
             try {
                 const [dfOut, hOut] = await Promise.all([ cmd(["btrfs", "filesystem", "df", v.mountPoint]), cmd(["df", "-B1", v.mountPoint]) ]);
                 const dM = dfOut.match(/Data,\s*(.*?):/i), mM = dfOut.match(/Metadata,\s*(.*?):/i);
-                v.raid = (dM ? `<span class="btrfs-code">Data: ${dM[1].toUpperCase()}</span>` : "") + (mM && dM && mM[1] !== dM[1] ? ` <span class="btrfs-code" style="background:#e2e8f0; color:#4a5568;">Meta: ${mM[1].toUpperCase()}</span>` : "");
+                
+                // BUGFIX: Menghapus inline style penyebab CSP Error, menggantinya dengan class "text-muted"
+                v.raid = (dM ? `<span class="btrfs-code">Data: ${dM[1].toUpperCase()}</span>` : "") + (mM && dM && mM[1] !== dM[1] ? ` <span class="btrfs-code text-muted">Meta: ${mM[1].toUpperCase()}</span>` : "");
+                
                 const dfLines = hOut.trim().split("\n");
                 v.usable = dfLines.length > 1 ? formatSize(parseInt(dfLines[1].trim().split(/\s+/)[1], 10)) : "Unknown";
             } catch(e) { v.raid = "Error Reading Profile"; v.usable = "Error"; }
@@ -111,7 +114,17 @@ window.App = {
                         <div>${devHtml}</div>
                         ${v.mountPoint ? `<div class="advanced-topo-actions"><button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${v.mountPoint}">Add Disk</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-raid" data-mount="${v.mountPoint}">Convert RAID Profile</button> <button class="btn btn-secondary btn-sm btn-action" data-action="resize-vol" data-mount="${v.mountPoint}">Resize Volume</button></div>` : ''}
                     </div>
-                    ${v.mountPoint ? `<div class="btrfs-card"><h4 class="section-title">Advanced Maintenance & Optimization</h4><div class="flex-wrap-gap"><button class="btn btn-primary btn-sm btn-action" data-action="scrub" data-mount="${v.mountPoint}">Scrub</button> <button class="btn btn-secondary btn-sm btn-action" data-action="scrub-status" data-mount="${v.mountPoint}">Check Scrub</button> <button class="btn btn-secondary btn-sm btn-action" data-action="balance" data-mount="${v.mountPoint}">Balance (50%)</button> <button class="btn btn-secondary btn-sm btn-action" data-action="defrag" data-mount="${v.mountPoint}">Defrag+ZSTD</button></div><div id="maint-console-${v.mountPoint.replace(/\//g, '-')}" class="status-console hidden-element"></div></div>` : `<div class="warning-box"><p class="text-warning mb-5">Volume Locked</p><p class="text-muted">Please mount this volume via Cockpit's native Storage page to unlock subvolume and kernel maintenance tasks.</p></div>`}
+                    ${v.mountPoint ? `<div class="btrfs-card">
+                        <h4 class="section-title">Advanced Maintenance & Optimization</h4>
+                        <div class="flex-wrap-gap">
+                            <button class="btn btn-primary btn-sm btn-action" data-action="scrub" data-mount="${v.mountPoint}">Scrub</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="scrub-status" data-mount="${v.mountPoint}">Check Scrub</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="balance" data-mount="${v.mountPoint}">Balance (50%)</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="defrag" data-mount="${v.mountPoint}">Defrag</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="defrag-zstd" data-mount="${v.mountPoint}">Defrag+ZSTD</button>
+                        </div>
+                        <div id="maint-console-${v.mountPoint.replace(/\//g, '-')}" class="status-console hidden-element"></div>
+                    </div>` : `<div class="warning-box"><p class="text-warning mb-5">Volume Locked</p><p class="text-muted">Please mount this volume via Cockpit's native Storage page to unlock subvolume and kernel maintenance tasks.</p></div>`}
                 </div>
                 <div class="detail-right-col animated-view">
                     <div class="btrfs-card h-100-col">

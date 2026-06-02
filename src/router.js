@@ -31,7 +31,11 @@ document.body.addEventListener("click", e => {
             case 'scrub': customConfirm("Start Scrub", `Start data scrubbing on ${mnt}?`, "Start", () => task("Scrubbing...", ["btrfs", "scrub", "start", mnt], "Started. Click 'Check Scrub' for progress.")); break;
             case 'scrub-status': task("Fetching scrub status...", ["btrfs", "scrub", "status", mnt], "Scrub Status Output:"); break;
             case 'balance': customConfirm("Start Balance", `Rebalance blocks (50% usage) on ${mnt}?`, "Start", () => task("Balancing...", ["btrfs", "balance", "start", "-dusage=50", mnt], "Done!")); break;
-            case 'defrag': customConfirm("Defrag & Compress", `Run recursive ZSTD defragmentation?`, "Start", () => task("Defragging...", ["btrfs", "filesystem", "defragment", "-r", "-czstd", mnt], "Defrag sent to kernel.")); break;
+            
+            // PEMISAHAN FUNGSI DEFRAG
+            case 'defrag': customConfirm("Defragment Volume", `Run recursive defragmentation on ${mnt}?`, "Start", () => task("Defragging...", ["btrfs", "filesystem", "defragment", "-r", mnt], "Defrag command sent to kernel.")); break;
+            case 'defrag-zstd': customConfirm("Defrag & Compress", `Run recursive ZSTD defragmentation on ${mnt}?`, "Start", () => task("Defragging & Compressing...", ["btrfs", "filesystem", "defragment", "-r", "-czstd", mnt], "Defrag+ZSTD command sent to kernel.")); break;
+            
             case 'remove-dev': customConfirm("Remove Device", `Evacuate and remove ${tgt.getAttribute("data-devpath")}?`, "Remove", () => task("Evacuating...", ["btrfs", "device", "remove", tgt.getAttribute("data-devpath"), mnt], "Removed!", true)); break;
             
             case 'add-dev-modal':
@@ -67,6 +71,9 @@ document.body.addEventListener("click", e => {
     } catch(err) { customAlert("Execution Error", err.message); }
 });
 
+// --- INIT STATIC LISTENERS ---
+on("generic-modal-cancel", "click", () => Modal.close());
+on("generic-modal-confirm", "click", () => Modal.confirm());
 on("btn-back-master", "click", () => { $("view-detail").classList.add("hidden-element"); $("view-master").classList.remove("hidden-element"); $("detail-container").setAttribute("data-active-index", ""); });
 on("btn-close-subvol-modal", "click", () => $("manage-subvol-modal").classList.add("hidden-element"));
 on("btn-close-add-modal", "click", () => $("add-dev-modal").classList.add("hidden-element"));
