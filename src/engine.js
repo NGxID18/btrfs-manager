@@ -1,5 +1,3 @@
-const { $, cmd, parseSize, formatSize } = window;
-
 window.App = {
     vols: [], hw: {}, mnt: {},
 

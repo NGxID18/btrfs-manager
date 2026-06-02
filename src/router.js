@@ -1,5 +1,3 @@
-const { $, on, cmd, App, Modal, customAlert, customConfirm, customPrompt, customSelect } = window;
-
 const getEmptyDevices = () => {
     return cmd(["lsblk", "-J", "-o", "NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT"]).then(data => {
         const extractEmpty = (devs) => devs.reduce((acc, d) => {
