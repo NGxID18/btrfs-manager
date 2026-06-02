@@ -1,4 +1,3 @@
-// main.js
 const getEmptyDevices = () => {
     return cmd(["lsblk", "-J", "-o", "NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT"]).then(data => {
         const extractEmpty = (devs) => devs.reduce((acc, d) => {
@@ -30,7 +29,7 @@ document.body.addEventListener("click", e => {
             case 'convert-raid': customSelect("Online RAID Conversion", "Select new profile:", [{v:"single",l:"Single"},{v:"raid0",l:"RAID 0"},{v:"raid1",l:"RAID 1"},{v:"raid10",l:"RAID 10"}], "Convert", (p) => { if(p) task(`Converting to ${p}...`, ["btrfs", "balance", "start", "-f", "-dconvert="+p, "-mconvert="+p, mnt], `Conversion to ${p} executed!`); }); break;
             case 'resize-vol': customPrompt("Resize Volume", "Target size (e.g. 'max', '+10G'):", "max", "Resize", (sz) => { if(sz) task(`Resizing to ${sz}...`, ["btrfs", "filesystem", "resize", sz, mnt], "Resized!", true); }); break;
             case 'scrub': customConfirm("Start Scrub", `Start data scrubbing on ${mnt}?`, "Start", () => task("Scrubbing...", ["btrfs", "scrub", "start", mnt], "Started. Click 'Check Scrub' for progress.")); break;
-            case 'scrub-status': task("Fetching scrub status...", ["btrfs", "scrub", "status", mnt], "Scrub Status:"); break;
+            case 'scrub-status': task("Fetching scrub status...", ["btrfs", "scrub", "status", mnt], "Scrub Status Output:"); break;
             case 'balance': customConfirm("Start Balance", `Rebalance blocks (50% usage) on ${mnt}?`, "Start", () => task("Balancing...", ["btrfs", "balance", "start", "-dusage=50", mnt], "Done!")); break;
             case 'defrag': customConfirm("Defrag & Compress", `Run recursive ZSTD defragmentation?`, "Start", () => task("Defragging...", ["btrfs", "filesystem", "defragment", "-r", "-czstd", mnt], "Defrag sent to kernel.")); break;
             case 'remove-dev': customConfirm("Remove Device", `Evacuate and remove ${tgt.getAttribute("data-devpath")}?`, "Remove", () => task("Evacuating...", ["btrfs", "device", "remove", tgt.getAttribute("data-devpath"), mnt], "Removed!", true)); break;
@@ -68,9 +67,6 @@ document.body.addEventListener("click", e => {
     } catch(err) { customAlert("Execution Error", err.message); }
 });
 
-// --- INIT STATIC LISTENERS ---
-on("generic-modal-cancel", "click", () => Modal.close());
-on("generic-modal-confirm", "click", () => Modal.confirm());
 on("btn-back-master", "click", () => { $("view-detail").classList.add("hidden-element"); $("view-master").classList.remove("hidden-element"); $("detail-container").setAttribute("data-active-index", ""); });
 on("btn-close-subvol-modal", "click", () => $("manage-subvol-modal").classList.add("hidden-element"));
 on("btn-close-add-modal", "click", () => $("add-dev-modal").classList.add("hidden-element"));
@@ -88,7 +84,6 @@ on("btn-confirm-add-dev", "click", (e) => {
         .catch(e => updateBox("Failed: " + e.message));
 });
 
-// --- RAID CREATION ---
 on("btn-create-raid", "click", () => {
     $("raid-form").classList.remove("hidden-element"); $("format-status").classList.add("hidden-element");
     $("available-disks").innerHTML = "Scanning block devices...";
@@ -105,8 +100,7 @@ on("btn-execute-format", "click", () => {
     if (!disks.length) return ($("format-status").innerText = "Error: No disks selected!", $("format-status").classList.remove("hidden-element"), $("format-status").style.color = "var(--btn-danger)");
     let c = ["mkfs.btrfs", "-d", prof, "-m", prof, "-f"]; if (lbl) c.push("-L", lbl); c.push(...disks);
     $("format-status").classList.remove("hidden-element"); $("format-status").style.color = "var(--btn-primary)"; $("format-status").innerText = "> Formatting..."; $("btn-execute-format").disabled = true;
-    cmd(c).then(() => { $("format-status").style.color = "var(--console-text)"; $("format-status").innerText = "Success!"; App.fetch(); setTimeout(() => { $("raid-form").classList.add("hidden-element"); $("btn-execute-format").disabled = false; }, 3000); }).catch(e => { $("format-status").style.color = "var(--btn-danger)"; $("format-status").innerText = "Failed:\n" + e.message; $("btn-execute-format").disabled = false; });
+    cmd(c).then(() => { $("format-status").style.color = "var(--console-text)"; $("format-status").innerText = "Success! Volume Formatted."; App.fetch(); setTimeout(() => { $("raid-form").classList.add("hidden-element"); $("btn-execute-format").disabled = false; }, 3000); }).catch(e => { $("format-status").style.color = "var(--btn-danger)"; $("format-status").innerText = "Failed:\n" + e.message; $("btn-execute-format").disabled = false; });
 });
 
-// --- BOOT ---
 App.fetch();
