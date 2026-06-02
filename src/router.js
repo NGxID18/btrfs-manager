@@ -1,3 +1,5 @@
+const { $, on, cmd, App, Modal, customAlert, customConfirm, customPrompt, customSelect } = window;
+
 const getEmptyDevices = () => {
     return cmd(["lsblk", "-J", "-o", "NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT"]).then(data => {
         const extractEmpty = (devs) => devs.reduce((acc, d) => {
@@ -31,11 +33,8 @@ document.body.addEventListener("click", e => {
             case 'scrub': customConfirm("Start Scrub", `Start data scrubbing on ${mnt}?`, "Start", () => task("Scrubbing...", ["btrfs", "scrub", "start", mnt], "Started. Click 'Check Scrub' for progress.")); break;
             case 'scrub-status': task("Fetching scrub status...", ["btrfs", "scrub", "status", mnt], "Scrub Status Output:"); break;
             case 'balance': customConfirm("Start Balance", `Rebalance blocks (50% usage) on ${mnt}?`, "Start", () => task("Balancing...", ["btrfs", "balance", "start", "-dusage=50", mnt], "Done!")); break;
-            
-            // PEMISAHAN FUNGSI DEFRAG
             case 'defrag': customConfirm("Defragment Volume", `Run recursive defragmentation on ${mnt}?`, "Start", () => task("Defragging...", ["btrfs", "filesystem", "defragment", "-r", mnt], "Defrag command sent to kernel.")); break;
             case 'defrag-zstd': customConfirm("Defrag & Compress", `Run recursive ZSTD defragmentation on ${mnt}?`, "Start", () => task("Defragging & Compressing...", ["btrfs", "filesystem", "defragment", "-r", "-czstd", mnt], "Defrag+ZSTD command sent to kernel.")); break;
-            
             case 'remove-dev': customConfirm("Remove Device", `Evacuate and remove ${tgt.getAttribute("data-devpath")}?`, "Remove", () => task("Evacuating...", ["btrfs", "device", "remove", tgt.getAttribute("data-devpath"), mnt], "Removed!", true)); break;
             
             case 'add-dev-modal':
