@@ -1,3 +1,5 @@
+const { $, on, cmd, App, Modal, customAlert, customConfirm, customPrompt, customSelect } = window;
+
 const getEmptyDevices = () => {
     return cmd(["lsblk", "-J", "-o", "NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT"]).then(data => {
         const extractEmpty = (devs) => devs.reduce((acc, d) => {
@@ -74,12 +76,23 @@ document.body.addEventListener("click", e => {
                         if(freq === "disable") {
                             cmd(["sh", "-c", cleanCmd]).then(() => customAlert("Success", "Auto-snapshot successfully disabled.")).catch(e => customAlert("Error", e.message));
                         } else {
-                            const scriptContent = `#!/bin/bash\\nmkdir -p ${targetDir}/.snapshots\\nbtrfs subvolume snapshot -r ${targetDir} ${targetDir}/.snapshots/auto_\\$(date +\\%Y\\%m\\%d_\\%H\\%M)\\n`;
-                            const setupCmd = `${cleanCmd} && printf "${scriptContent}" > /etc/cron.${freq}/btrfs_${safeName} && chmod +x /etc/cron.${freq}/btrfs_${safeName}`;
+                            // Delay 300ms agar Modal pertama menghilang dengan halus sebelum Modal kedua muncul
+                            setTimeout(() => {
+                                customPrompt("Snapshot Retention Policy", "How many recent snapshots do you want to keep?\n(Older snapshots will be deleted automatically)", "5", "Save Configuration", (limitStr) => {
+                                    if(!limitStr) return;
+                                    const limit = parseInt(limitStr, 10);
+                                    if(isNaN(limit) || limit < 1) { customAlert("Error", "Invalid retention limit. Must be a number greater than 0."); return; }
 
-                            cmd(["sh", "-c", setupCmd])
-                                .then(() => customAlert("Success", `Auto-snapshot configured successfully!\nFrequency: ${freq.toUpperCase()}`))
-                                .catch(e => customAlert("Error", "Failed to configure schedule: " + e.message));
+                                    // Skrip sakti untuk membuang snapshot yang kedaluwarsa secara native
+                                    const scriptContent = `#!/bin/bash\\nmkdir -p ${targetDir}/.snapshots\\nbtrfs subvolume snapshot -r ${targetDir} ${targetDir}/.snapshots/auto_\\$(date +\\%Y\\%m\\%d_\\%H\\%M)\\nls -dt ${targetDir}/.snapshots/auto_* 2>/dev/null | tail -n +${limit + 1} | xargs -r btrfs subvolume delete\\n`;
+                                    
+                                    const setupCmd = `${cleanCmd} && printf "${scriptContent}" > /etc/cron.${freq}/btrfs_${safeName} && chmod +x /etc/cron.${freq}/btrfs_${safeName}`;
+
+                                    cmd(["sh", "-c", setupCmd])
+                                        .then(() => customAlert("Success", `Auto-snapshot configured successfully!\nFrequency: ${freq.toUpperCase()}\nRetention: Keep latest ${limit} snapshots`))
+                                        .catch(e => customAlert("Error", "Failed to configure schedule: " + e.message));
+                                });
+                            }, 300);
                         }
                     });
                 }
