@@ -13,7 +13,18 @@ window.App = {
             ]);
 
             this.mnt = {};
-            const walk = (nodes) => nodes.forEach(n => { if(n.source) this.mnt[n.source] = n.target; if(n.children) walk(n.children); });
+            const walk = (nodes) => nodes.forEach(n => { 
+                // FIX: Memastikan n.target ada sebelum membaca .length
+                if(n.source && n.target) {
+                    // FIX: Arch Linux subvolume parser (/dev/nvme0n1p2[/@])
+                    const baseDev = n.source.split('[')[0]; 
+                    if (!this.mnt[baseDev] || n.target.length < this.mnt[baseDev].length) {
+                        this.mnt[baseDev] = n.target;
+                    }
+                    this.mnt[n.source] = n.target;
+                }
+                if(n.children) walk(n.children); 
+            });
             walk(JSON.parse(mntOut).filesystems || []);
 
             this.hw = {};

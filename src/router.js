@@ -1,5 +1,3 @@
-const { $, on, cmd, App, Modal, customAlert, customConfirm, customPrompt, customSelect } = window;
-
 const getEmptyDevices = () => {
     return cmd(["lsblk", "-J", "-o", "NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT"]).then(data => {
         const extractEmpty = (devs) => devs.reduce((acc, d) => {
@@ -82,7 +80,6 @@ document.body.addEventListener("click", e => {
                                     const limit = parseInt(limitStr, 10);
                                     if(isNaN(limit) || limit < 1) { customAlert("Error", "Invalid retention limit. Must be a number greater than 0."); return; }
 
-                                    // FIX: Double escape format '%' menjadi '%%' dan bungkus dengan single quotes agar bash mengeksekusinya murni.
                                     const scriptContent = `#!/bin/bash\\nmkdir -p "${targetDir}/.snapshots"\\nbtrfs subvolume snapshot -r "${targetDir}" "${targetDir}/.snapshots/auto_$(date +\\%%Y\\%%m\\%%d_\\%%H\\%%M)"\\nls -dt "${targetDir}/.snapshots/auto_"* 2>/dev/null | tail -n +${limit + 1} | xargs -r btrfs subvolume delete\\n`;
                                     
                                     const setupCmd = `${cleanCmd} && printf '${scriptContent}' > /etc/cron.${freq}/btrfs_${safeName} && chmod +x /etc/cron.${freq}/btrfs_${safeName}`;
