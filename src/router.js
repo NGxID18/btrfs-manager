@@ -61,21 +61,31 @@ document.body.addEventListener("click", e => {
                 
                 // === SISTEM INTEGRASI SNAPPER NATIVE ===
                 if (op === "auto-snap") {
-                    const targetName = p ? `/${p}` : 'Root Volume';
-                    customSelect("Snapper Integration", `Select Snapper timeline frequency for ${targetName}:`, [
-                        {v: "disable", l: "Disable Snapper Timeline (Off)"},
-                        {v: "hourly", l: "Hourly Timeline"},
-                        {v: "daily", l: "Daily Timeline"},
-                        {v: "weekly", l: "Weekly Timeline"}
-                    ], "Next", (freq) => {
-                        if(!freq) return;
-                        const targetDir = p ? (mnt === "/" ? `/${p}` : `${mnt}/${p}`) : mnt;
-                        
-                        // Pembersihan otomatis sisa-sisa custom cron kita sebelumnya (BTRFS Manager Native)
-                        const cleanOldCron = "rm -f /etc/cron.hourly/btrfs_* /etc/cron.daily/btrfs_* /etc/cron.weekly/btrfs_* 2>/dev/null || true;";
+                  const targetName = p ? `/${p}` : "Root Volume";
+                  customSelect(
+                    "Snapper Integration",
+                    `Select Snapper timeline frequency for ${targetName}:`,
+                    [
+                      { v: "disable", l: "Disable Snapper Timeline (Off)" },
+                      { v: "hourly", l: "Hourly Timeline" },
+                      { v: "daily", l: "Daily Timeline" },
+                      { v: "weekly", l: "Weekly Timeline" },
+                    ],
+                    "Next",
+                    (freq) => {
+                      if (!freq) return;
+                      const targetDir = p
+                        ? mnt === "/"
+                          ? `/${p}`
+                          : `${mnt}/${p}`
+                        : mnt;
 
-                        if(freq === "disable") {
-                            const bashScript = `
+                      // Pembersihan otomatis sisa-sisa custom cron kita sebelumnya (BTRFS Manager Native)
+                      const cleanOldCron =
+                        "rm -f /etc/cron.hourly/btrfs_* /etc/cron.daily/btrfs_* /etc/cron.weekly/btrfs_* 2>/dev/null || true;";
+
+                      if (freq === "disable") {
+                        const bashScript = `
                                 ${cleanOldCron}
                                 if ! command -v snapper >/dev/null 2>&1; then echo "ERROR: Snapper is not installed on this system."; exit 1; fi;
                                 CFG_NAME=$(snapper list-configs 2>/dev/null | awk -v mnt="${targetDir}" '$3 == mnt || $3 == mnt"/" {print $1; exit}');
@@ -86,15 +96,28 @@ document.body.addEventListener("click", e => {
                                     echo "No active Snapper config found for ${targetDir}, nothing to disable.";
                                 fi
                             `;
-                            cmd(["sh", "-c", bashScript]).then(out => customAlert("Success", out)).catch(e => customAlert("Error", e.message));
-                        } else {
-                            setTimeout(() => {
-                                customPrompt("Snapper Retention Limit", "How many recent snapshots do you want Snapper to keep?", "5", "Apply to Snapper", (limitStr) => {
-                                    if(!limitStr) return;
-                                    const limit = parseInt(limitStr, 10);
-                                    if(isNaN(limit) || limit < 1) { customAlert("Error", "Invalid retention limit."); return; }
+                        cmd(["sh", "-c", bashScript])
+                          .then((out) => customAlert("Success", out))
+                          .catch((e) => customAlert("Error", e.message));
+                      } else {
+                        setTimeout(() => {
+                          customPrompt(
+                            "Snapper Retention Limit",
+                            "How many recent snapshots do you want Snapper to keep?",
+                            "5",
+                            "Apply to Snapper",
+                            (limitStr) => {
+                              if (!limitStr) return;
+                              const limit = parseInt(limitStr, 10);
+                              if (isNaN(limit) || limit < 1) {
+                                customAlert(
+                                  "Error",
+                                  "Invalid retention limit.",
+                                );
+                                return;
+                              }
 
-                                    const bashScript = `
+                              const bashScript = `
                                         ${cleanOldCron}
                                         if ! command -v snapper >/dev/null 2>&1; then echo "ERROR: Snapper is not installed.\\nPlease install it first (e.g. pacman -S snapper or apt install snapper)."; exit 1; fi;
                                         
@@ -122,22 +145,170 @@ document.body.addEventListener("click", e => {
                                         printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRetention Limit: %s\\n" "$CFG_NAME" "${freq}" "${limit}"
                                     `;
 
-                                    cmd(["sh", "-c", bashScript])
-                                        .then(out => customAlert("Success", out))
-                                        .catch(e => customAlert("Error", e.message));
-                                });
-                            }, 300);
-                        }
-                    });
+                              cmd(["sh", "-c", bashScript])
+                                .then((out) => customAlert("Success", out))
+                                .catch((e) => customAlert("Error", e.message));
+                            },
+                          );
+                        }, 300);
+                      }
+                    },
+                  );
                 }
                 // === AKHIR SISTEM INTEGRASI SNAPPER NATIVE ===
-                
-                else if(op === "create") { const nm = $(`new-subvol-${i}`)?.value.trim(); if(!nm) { customAlert("Error", "Name required!"); return;} cmd(["btrfs", "subvolume", "create", mnt === "/" ? `/${nm}` : `${mnt}/${nm}`]).then(()=>{ if($(`new-subvol-${i}`)) $(`new-subvol-${i}`).value = ""; App.fetchSubvols(mnt, i); }).catch(e=>customAlert("Failed", e.message)); }
-                else if(op === "del") customConfirm("Delete", `Delete "${p}"?`, "Delete", () => cmd(["btrfs", "subvolume", "delete", mnt === "/" ? `/${p}` : `${mnt}/${p}`]).then(()=>App.fetchSubvols(mnt, i)).catch(e=>customAlert("Failed", e.message)));
-                else if(op.startsWith("snap")) customPrompt("Snapshot", "Name:", sName(new Date().toISOString().replace(/[:.]/g,"-").slice(0,19)), "Create", (n) => { if(n) cmd(["btrfs", "subvolume", "snapshot", p ? (mnt==="/"?`/${p}`:`${mnt}/${p}`) : mnt, mnt==="/"?`/${n}`:`${mnt}/${n}`]).then(()=>App.fetchSubvols(mnt, i||tgt.getAttribute("data-index"))).catch(e=>customAlert("Failed", e.message)); });
-                else if(op === "restore") customPrompt("Restore/Clone", "Target name:", p.split("_snap_")[0]+"_restored", "Restore", (n) => { if(n) cmd(["btrfs", "subvolume", "snapshot", mnt==="/"?`/${p}`:`${mnt}/${p}`, mnt==="/"?`/${n}`:`${mnt}/${n}`]).then(()=>App.fetchSubvols(mnt, i)).catch(e=>customAlert("Failed", e.message)); });
-                else if(op === "quota") customPrompt("Quota", `Set max limit (e.g. 50G):`, "50G", "Apply", (l) => { if(l) cmd(["btrfs", "quota", "enable", mnt]).then(()=>cmd(["btrfs", "qgroup", "limit", l, mnt==="/"?`/${p}`:`${mnt}/${p}`]).then(()=>customAlert("Success", "Quota Applied")).catch(e=>customAlert("Error", e.message))).catch(e=>customAlert("Error", "Failed to enable quota module: " + e.message)); });
-                else if(op === "default") customConfirm("Set Default", `Make ID ${tgt.getAttribute("data-subid")} default?`, "Confirm", () => cmd(["btrfs", "subvolume", "set-default", tgt.getAttribute("data-subid"), mnt]).then(()=>customAlert("Success", "Set as default root.")).catch(e=>customAlert("Error", e.message)));
+                else if (op === "create") {
+                  const nm = $(`new-subvol-${i}`)?.value.trim();
+                  if (!nm) {
+                    customAlert("Error", "Name required!");
+                    return;
+                  }
+                  cmd([
+                    "btrfs",
+                    "subvolume",
+                    "create",
+                    mnt === "/" ? `/${nm}` : `${mnt}/${nm}`,
+                  ])
+                    .then(() => {
+                      if ($(`new-subvol-${i}`)) $(`new-subvol-${i}`).value = "";
+                      App.fetchSubvols(mnt, i);
+                    })
+                    .catch((e) => customAlert("Failed", e.message));
+                } else if (op === "del")
+                  customConfirm("Delete", `Delete "${p}"?`, "Delete", () =>
+                    cmd([
+                      "btrfs",
+                      "subvolume",
+                      "delete",
+                      mnt === "/" ? `/${p}` : `${mnt}/${p}`,
+                    ])
+                      .then(() => App.fetchSubvols(mnt, i))
+                      .catch((e) => customAlert("Failed", e.message)),
+                  );
+                else if (op.startsWith("snap"))
+                  customPrompt(
+                    "Snapshot",
+                    "Name:",
+                    sName(
+                      new Date()
+                        .toISOString()
+                        .replace(/[:.]/g, "-")
+                        .slice(0, 19),
+                    ),
+                    "Create",
+                    (n) => {
+                      if (n)
+                        cmd([
+                          "btrfs",
+                          "subvolume",
+                          "snapshot",
+                          p ? (mnt === "/" ? `/${p}` : `${mnt}/${p}`) : mnt,
+                          mnt === "/" ? `/${n}` : `${mnt}/${n}`,
+                        ])
+                          .then(() =>
+                            App.fetchSubvols(
+                              mnt,
+                              i || tgt.getAttribute("data-index"),
+                            ),
+                          )
+                          .catch((e) => customAlert("Failed", e.message));
+                    },
+                  );
+                else if (op === "restore")
+                  customPrompt(
+                    "Restore/Clone",
+                    "Target name:",
+                    p.split("_snap_")[0] + "_restored",
+                    "Restore",
+                    (n) => {
+                      if (n)
+                        cmd([
+                          "btrfs",
+                          "subvolume",
+                          "snapshot",
+                          mnt === "/" ? `/${p}` : `${mnt}/${p}`,
+                          mnt === "/" ? `/${n}` : `${mnt}/${n}`,
+                        ])
+                          .then(() => App.fetchSubvols(mnt, i))
+                          .catch((e) => customAlert("Failed", e.message));
+                    },
+                  );
+                else if (op === "quota")
+                  customPrompt(
+                    "Quota",
+                    `Set max limit (e.g. 50G):`,
+                    "50G",
+                    "Apply",
+                    (l) => {
+                      if (l)
+                        cmd(["btrfs", "quota", "enable", mnt])
+                          .then(() =>
+                            cmd([
+                              "btrfs",
+                              "qgroup",
+                              "limit",
+                              l,
+                              mnt === "/" ? `/${p}` : `${mnt}/${p}`,
+                            ])
+                              .then(() =>
+                                customAlert("Success", "Quota Applied"),
+                              )
+                              .catch((e) => customAlert("Error", e.message)),
+                          )
+                          .catch((e) =>
+                            customAlert(
+                              "Error",
+                              "Failed to enable quota module: " + e.message,
+                            ),
+                          );
+                    },
+                  );
+                else if (op === "default")
+                  customConfirm(
+                    "Set Default",
+                    `Make ID ${tgt.getAttribute("data-subid")} default?`,
+                    "Confirm",
+                    () =>
+                      cmd([
+                        "btrfs",
+                        "subvolume",
+                        "set-default",
+                        tgt.getAttribute("data-subid"),
+                        mnt,
+                      ])
+                        .then(() =>
+                          customAlert("Success", "Set as default root."),
+                        )
+                        .catch((e) => customAlert("Error", e.message)),
+                  );
+                else if (op === "purge-snaps") {
+                  customConfirm(
+                    "Purge Old Snapshots",
+                    "Hapus semua snapshot yang sudah tidak terpakai menurut kebijakan Snapper/Cron?",
+                    "Purge Now",
+                    () => {
+                      const bashScript = `
+            if command -v snapper >/dev/null 2>&1; then
+                CFG=$(snapper list-configs 2>/dev/null | awk -v mnt="${mnt}" '$3 == mnt || $3 == mnt"/" {print $1; exit}')
+                if [ -n "$CFG" ] && [ "$CFG" != "Config" ]; then
+                    snapper -c "$CFG" cleanup timeline
+                    snapper -c "$CFG" cleanup number
+                    echo "Snapper cleanup completed."
+                else
+                    echo "No Snapper config found for this volume."
+                fi
+            else
+                echo "Snapper not installed."
+            fi
+        `;
+                      task(
+                        "Cleaning up snapshots...",
+                        ["sh", "-c", bashScript],
+                        "Cleanup Process Finished:",
+                        true,
+                      );
+                    },
+                  );
+                }
                 break;
         }
     } catch(err) { customAlert("Execution Error", err.message); }

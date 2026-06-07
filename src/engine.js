@@ -54,7 +54,6 @@ window.App = {
             const rawSize = formatSize(devs.reduce((sum, d) => sum + parseSize(d.size), 0));
             const hwList = [...new Set(devs.map(d => this.hw[d.path]))].filter(Boolean).join(" & ") || "Unknown Device Hardware";
 
-            // Inisialisasi snapStatus dengan label Loading...
             return { idx, label: (mLabel && (mLabel[1]||mLabel[2]) !== "none") ? (mLabel[1]||mLabel[2]) : "System/Root (No Label)", uuid, mountPoint, devs, rawSize, hwList, raid: "Loading...", usable: "Loading...", snapStatus: "Loading..." };
         });
 
@@ -74,7 +73,7 @@ window.App = {
                 continue; 
             }
             try {
-                // Skrip Bash Detektif untuk melacak konfigurasi Auto-Snap (Snapper maupun Native Cron)
+                // Menambahkan pelacakan untuk opsi Monthly
                 const snapScript = `
 MNT="${v.mountPoint}"
 STATUS="Not Configured"
@@ -86,15 +85,17 @@ if command -v snapper >/dev/null 2>&1; then
             H=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_HOURLY"{print $3}')
             D=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_DAILY"{print $3}')
             W=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_WEEKLY"{print $3}')
+            M=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_MONTHLY"{print $3}')
             if [ "$H" != "0" ] && [ -n "$H" ]; then STATUS="Hourly (Max $H Snaps via Snapper)"
             elif [ "$D" != "0" ] && [ -n "$D" ]; then STATUS="Daily (Max $D Snaps via Snapper)"
             elif [ "$W" != "0" ] && [ -n "$W" ]; then STATUS="Weekly (Max $W Snaps via Snapper)"
+            elif [ "$M" != "0" ] && [ -n "$M" ]; then STATUS="Monthly (Max $M Snaps via Snapper)"
             else STATUS="Enabled (via Snapper)"; fi
         fi
     fi
 fi
 if [ "$STATUS" = "Not Configured" ]; then
-    CRON=$(grep -l "btrfs subvolume snapshot.*$MNT" /etc/cron.hourly/* /etc/cron.daily/* /etc/cron.weekly/* 2>/dev/null | head -n 1)
+    CRON=$(grep -l "btrfs subvolume snapshot.*$MNT" /etc/cron.hourly/* /etc/cron.daily/* /etc/cron.weekly/* /etc/cron.monthly/* 2>/dev/null | head -n 1)
     if [ -n "$CRON" ]; then
         FRQ=$(echo "$CRON" | awk -F'/' '{print $3}' | sed 's/cron\\.//' | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')
         LIM=$(grep "tail -n" "$CRON" | sed -E 's/.*tail -n \\+([0-9]+).*/\\1/')
@@ -121,7 +122,6 @@ echo "$STATUS"
                 const dfLines = hOut.trim().split("\n");
                 v.usable = dfLines.length > 1 ? formatSize(parseInt(dfLines[1].trim().split(/\s+/)[1], 10)) : "Unknown";
                 
-                // Menyimpan status snap yang ditangkap ke dalam variabel
                 v.snapStatus = snapOut.trim() || "Not Configured";
             } catch(e) { 
                 v.raid = "Error Reading Profile"; 
@@ -204,6 +204,7 @@ echo "$STATUS"
                             <button class="btn btn-primary btn-sm btn-action" data-action="subvol-ops" data-op="create" data-mount="${v.mountPoint}" data-index="${v.idx}">Create</button> 
                             <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="snap-root" data-mount="${v.mountPoint}">Snap Root</button>
                             <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="auto-snap" data-path="" data-mount="${v.mountPoint}">Auto-Snap</button>
+                            <button class="btn btn-danger btn-sm btn-action" data-action="subvol-ops" data-op="purge-snaps" data-mount="${v.mountPoint}">Purge Old</button>
                         </div>
                         <div id="subvol-list-${v.idx}" class="subvol-list-full"><p class="p-15-muted">Loading subvolumes...</p></div>` : '<p class="text-warning">Mount pool filesystem to unlock subvolume tree operations.</p>'}
                     </div>
@@ -215,12 +216,35 @@ echo "$STATUS"
     async fetchSubvols(mount, idx) {
         if(!$(`subvol-list-${idx}`)) return;
         try {
-            const out = await cmd(["btrfs", "subvolume", "list", mount]);
+            const script = `
+mnt="${mount}"
+btrfs subvolume list "$mnt" | while read -r line; do
+    id=$(echo "$line" | awk '{print $2}')
+    path=$(echo "$line" | sed -n 's/.*path \\(.*\\)/\\1/p')
+    ctime=$(btrfs subvolume show "$mnt/$path" 2>/dev/null | grep -i "Creation time:" | sed -e 's/^[[:space:]]*Creation time:[[:space:]]*//' | cut -d' ' -f1,2)
+    if [ -z "$ctime" ] || [ "$ctime" = "-" ]; then ctime="Unknown Time"; fi
+    echo "$id|$path|$ctime"
+done
+            `;
+            const out = await cmd(["sh", "-c", script]);
             const html = out.trim().split("\n").filter(l => l.trim()).map(line => {
-                const m = line.match(/ID\s+(\d+).*path\s+(.+)$/i);
-                if (!m) return "";
-                return `<div class="subvol-item animated-view"><div class="subvol-info"><span class="btrfs-code">/${m[2].trim()}</span><span class="text-muted">ID: ${m[1].trim()}</span></div><button class="btn btn-secondary btn-sm btn-action" data-action="manage-subvol" data-mount="${mount}" data-path="${m[2].trim()}" data-subid="${m[1].trim()}" data-index="${idx}">Manage</button></div>`;
+                const parts = line.split("|");
+                if (parts.length < 3) return "";
+                const id = parts[0];
+                const path = parts[1];
+                const ctime = parts.slice(2).join("|");
+                
+                // Menghapus ikon kalender dan mengubah teks menjadi ID: ${id}
+                return `<div class="subvol-item animated-view">
+                    <div class="subvol-info">
+                        <span class="btrfs-code">/${path}</span>
+                        <span class="text-primary mt-5" style="font-size: 13px; font-weight: 600;">Created: ${ctime}</span>
+                        <span class="text-muted" style="font-size: 12px; margin-top: 2px;">ID: ${id}</span>
+                    </div>
+                    <button class="btn btn-secondary btn-sm btn-action" data-action="manage-subvol" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Manage</button>
+                </div>`;
             }).join("");
+            
             $(`subvol-list-${idx}`).innerHTML = html || "<p class='mt-15 text-muted'>No custom subvolumes found inside this pool root.</p>";
         } catch(e) { $(`subvol-list-${idx}`).innerHTML = `<p class='text-danger mt-15'>Load failed: ${e.message}</p>`; }
     }
