@@ -14,9 +14,7 @@ window.App = {
 
             this.mnt = {};
             const walk = (nodes) => nodes.forEach(n => { 
-                // FIX: Memastikan n.target ada sebelum membaca .length
                 if(n.source && n.target) {
-                    // FIX: Arch Linux subvolume parser (/dev/nvme0n1p2[/@])
                     const baseDev = n.source.split('[')[0]; 
                     if (!this.mnt[baseDev] || n.target.length < this.mnt[baseDev].length) {
                         this.mnt[baseDev] = n.target;
@@ -56,7 +54,8 @@ window.App = {
             const rawSize = formatSize(devs.reduce((sum, d) => sum + parseSize(d.size), 0));
             const hwList = [...new Set(devs.map(d => this.hw[d.path]))].filter(Boolean).join(" & ") || "Unknown Device Hardware";
 
-            return { idx, label: (mLabel && (mLabel[1]||mLabel[2]) !== "none") ? (mLabel[1]||mLabel[2]) : "System/Root (No Label)", uuid, mountPoint, devs, rawSize, hwList, raid: "Loading...", usable: "Loading..." };
+            // Inisialisasi snapStatus dengan label Loading...
+            return { idx, label: (mLabel && (mLabel[1]||mLabel[2]) !== "none") ? (mLabel[1]||mLabel[2]) : "System/Root (No Label)", uuid, mountPoint, devs, rawSize, hwList, raid: "Loading...", usable: "Loading...", snapStatus: "Loading..." };
         });
 
         this.renderMaster();
@@ -67,23 +66,82 @@ window.App = {
 
     async fetchDynamicMetrics() {
         for (let v of this.vols) {
-            if (!v.mountPoint) { v.raid = "Mount required"; v.usable = "Locked (Not Mounted)"; this.updateUI(v); continue; }
+            if (!v.mountPoint) { 
+                v.raid = "Mount required"; 
+                v.usable = "Locked (Not Mounted)"; 
+                v.snapStatus = "Locked";
+                this.updateUI(v); 
+                continue; 
+            }
             try {
-                const [dfOut, hOut] = await Promise.all([ cmd(["btrfs", "filesystem", "df", v.mountPoint]), cmd(["df", "-B1", v.mountPoint]) ]);
+                // Skrip Bash Detektif untuk melacak konfigurasi Auto-Snap (Snapper maupun Native Cron)
+                const snapScript = `
+MNT="${v.mountPoint}"
+STATUS="Not Configured"
+if command -v snapper >/dev/null 2>&1; then
+    CFG=$(snapper list-configs 2>/dev/null | awk -v mnt="$MNT" '$3 == mnt || $3 == mnt"/" {print $1; exit}')
+    if [ -n "$CFG" ] && [ "$CFG" != "Config" ]; then
+        IS_ON=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_CREATE"{print $3}')
+        if [ "$IS_ON" = "yes" ]; then
+            H=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_HOURLY"{print $3}')
+            D=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_DAILY"{print $3}')
+            W=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_WEEKLY"{print $3}')
+            if [ "$H" != "0" ] && [ -n "$H" ]; then STATUS="Hourly (Max $H Snaps via Snapper)"
+            elif [ "$D" != "0" ] && [ -n "$D" ]; then STATUS="Daily (Max $D Snaps via Snapper)"
+            elif [ "$W" != "0" ] && [ -n "$W" ]; then STATUS="Weekly (Max $W Snaps via Snapper)"
+            else STATUS="Enabled (via Snapper)"; fi
+        fi
+    fi
+fi
+if [ "$STATUS" = "Not Configured" ]; then
+    CRON=$(grep -l "btrfs subvolume snapshot.*$MNT" /etc/cron.hourly/* /etc/cron.daily/* /etc/cron.weekly/* 2>/dev/null | head -n 1)
+    if [ -n "$CRON" ]; then
+        FRQ=$(echo "$CRON" | awk -F'/' '{print $3}' | sed 's/cron\\.//' | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')
+        LIM=$(grep "tail -n" "$CRON" | sed -E 's/.*tail -n \\+([0-9]+).*/\\1/')
+        if [ -n "$LIM" ]; then
+            STATUS="$FRQ (Max $((LIM - 1)) Snaps via Native Cron)"
+        else
+            STATUS="$FRQ (via Native Cron)"
+        fi
+    fi
+fi
+echo "$STATUS"
+                `;
+                
+                const [dfOut, hOut, snapOut] = await Promise.all([ 
+                    cmd(["btrfs", "filesystem", "df", v.mountPoint]), 
+                    cmd(["df", "-B1", v.mountPoint]),
+                    cmd(["sh", "-c", snapScript]).catch(() => "Not Configured")
+                ]);
+                
                 const dM = dfOut.match(/Data,\s*(.*?):/i), mM = dfOut.match(/Metadata,\s*(.*?):/i);
                 
                 v.raid = (dM ? `<span class="btrfs-code">Data: ${dM[1].toUpperCase()}</span>` : "") + (mM && dM && mM[1] !== dM[1] ? ` <span class="btrfs-code text-muted">Meta: ${mM[1].toUpperCase()}</span>` : "");
                 
                 const dfLines = hOut.trim().split("\n");
                 v.usable = dfLines.length > 1 ? formatSize(parseInt(dfLines[1].trim().split(/\s+/)[1], 10)) : "Unknown";
-            } catch(e) { v.raid = "Error Reading Profile"; v.usable = "Error"; }
+                
+                // Menyimpan status snap yang ditangkap ke dalam variabel
+                v.snapStatus = snapOut.trim() || "Not Configured";
+            } catch(e) { 
+                v.raid = "Error Reading Profile"; 
+                v.usable = "Error"; 
+                v.snapStatus = "Error"; 
+            }
             this.updateUI(v);
         }
     },
 
     updateUI(v) {
-        if($(`master-usable-${v.idx}`)) $(`master-usable-${v.idx}`).innerHTML = v.usable;
-        if($(`raid-display-${v.idx}`)) { $(`raid-display-${v.idx}`).innerHTML = v.raid; $(`usable-display-${v.idx}`).innerHTML = v.usable; }
+        if($(`master-usable-${v.idx}`)) {
+            $(`master-usable-${v.idx}`).innerHTML = v.usable;
+            if($(`master-snap-${v.idx}`)) $(`master-snap-${v.idx}`).innerHTML = v.snapStatus;
+        }
+        if($(`raid-display-${v.idx}`)) { 
+            $(`raid-display-${v.idx}`).innerHTML = v.raid; 
+            $(`usable-display-${v.idx}`).innerHTML = v.usable; 
+            if($(`snap-display-${v.idx}`)) $(`snap-display-${v.idx}`).innerHTML = v.snapStatus;
+        }
     },
 
     renderMaster() {
@@ -95,7 +153,8 @@ window.App = {
                 <p class="mb-5"><b>Hardware:</b> <span class="text-muted">${v.hwList}</span></p>
                 <p class="mb-5"><b>Raw Capacity:</b> ${v.rawSize}</p>
                 <p class="mb-5"><b>Usable Space:</b> <span id="master-usable-${v.idx}">${v.usable}</span></p>
-                <p class="mb-15"><b>Mount Status:</b> ${v.mountPoint ? `<span class="text-success">Mounted at ${v.mountPoint}</span>` : `<span class="text-warning">Not Mounted</span> <span class="text-muted text-sm">(Mount via Storage menu)</span>`}</p>
+                <p class="mb-5"><b>Auto-Snapshot:</b> <span id="master-snap-${v.idx}" class="text-primary fw-bold">${v.snapStatus}</span></p>
+                <p class="mb-15"><b>Mount Status:</b> ${v.mountPoint ? `<span class="text-success">${v.mountPoint}</span>` : `<span class="text-warning">Not Mounted</span> <span class="text-muted text-sm">(Mount via Storage menu)</span>`}</p>
                 <button class="btn btn-secondary w-100 mt-auto btn-action" data-action="open-detail" data-index="${v.idx}">Manage Volume</button>
             </div>`).join('') : "<p class='mt-15'>No active BTRFS storage pools detected.</p>";
     },
@@ -119,7 +178,8 @@ window.App = {
                         <p class="mb-8"><b>Raw Capacity:</b> ${v.rawSize} <span class="text-muted">(Physical Pool Combined)</span></p>
                         <p class="mb-8"><b>Usable Space:</b> <span id="usable-display-${v.idx}" class="fw-bold">${v.usable}</span></p>
                         <p class="mb-8"><b>Active Profile:</b> <span id="raid-display-${v.idx}">${v.raid}</span></p>
-                        <p class="mb-25"><b>Mount Status:</b> ${v.mountPoint ? `<span class="text-success">Mounted at ${v.mountPoint}</span>` : `<span class="text-warning">Not Mounted (Locked)</span>`}</p>
+                        <p class="mb-8"><b>Auto-Snapshot:</b> <span id="snap-display-${v.idx}" class="text-primary fw-bold">${v.snapStatus}</span></p>
+                        <p class="mb-25"><b>Mount Status:</b> ${v.mountPoint ? `<span class="text-success">${v.mountPoint}</span>` : `<span class="text-warning">Not Mounted (Locked)</span>`}</p>
                         <p class="section-title mt-15">Physical Device Topology</p>
                         <div>${devHtml}</div>
                         ${v.mountPoint ? `<div class="advanced-topo-actions"><button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${v.mountPoint}">Add Disk</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-raid" data-mount="${v.mountPoint}">Convert RAID Profile</button> <button class="btn btn-secondary btn-sm btn-action" data-action="resize-vol" data-mount="${v.mountPoint}">Resize Volume</button></div>` : ''}

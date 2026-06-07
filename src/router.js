@@ -1,3 +1,5 @@
+const { $, on, cmd, App, Modal, customAlert, customConfirm, customPrompt, customSelect } = window;
+
 const getEmptyDevices = () => {
     return cmd(["lsblk", "-J", "-o", "NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT"]).then(data => {
         const extractEmpty = (devs) => devs.reduce((acc, d) => {
@@ -57,41 +59,79 @@ document.body.addEventListener("click", e => {
                 const op = tgt.getAttribute("data-op"); const p = tgt.getAttribute("data-path") || ""; const i = tgt.getAttribute("data-index");
                 const sName = (dt) => p ? `${p.split("/").pop()}_snap_${dt}` : `root_snap_${dt}`;
                 
+                // === SISTEM INTEGRASI SNAPPER NATIVE ===
                 if (op === "auto-snap") {
                     const targetName = p ? `/${p}` : 'Root Volume';
-                    customSelect("Auto-Snapshot Schedule", `Select snapshot frequency for ${targetName}:\n(Snapshots saved in .snapshots hidden folder)`, [
-                        {v: "disable", l: "Disable Auto-Snapshot (Off)"},
-                        {v: "hourly", l: "Hourly (Every hour)"},
-                        {v: "daily", l: "Daily (Midnight)"},
-                        {v: "weekly", l: "Weekly (Sunday)"}
-                    ], "Apply", (freq) => {
+                    customSelect("Snapper Integration", `Select Snapper timeline frequency for ${targetName}:`, [
+                        {v: "disable", l: "Disable Snapper Timeline (Off)"},
+                        {v: "hourly", l: "Hourly Timeline"},
+                        {v: "daily", l: "Daily Timeline"},
+                        {v: "weekly", l: "Weekly Timeline"}
+                    ], "Next", (freq) => {
                         if(!freq) return;
-                        const safeName = p ? p.replace(/[^a-zA-Z0-9]/g, '_') : 'root_vol';
                         const targetDir = p ? (mnt === "/" ? `/${p}` : `${mnt}/${p}`) : mnt;
                         
-                        const cleanCmd = `rm -f /etc/cron.hourly/btrfs_${safeName} /etc/cron.daily/btrfs_${safeName} /etc/cron.weekly/btrfs_${safeName}`;
+                        // Pembersihan otomatis sisa-sisa custom cron kita sebelumnya (BTRFS Manager Native)
+                        const cleanOldCron = "rm -f /etc/cron.hourly/btrfs_* /etc/cron.daily/btrfs_* /etc/cron.weekly/btrfs_* 2>/dev/null || true;";
 
                         if(freq === "disable") {
-                            cmd(["sh", "-c", cleanCmd]).then(() => customAlert("Success", "Auto-snapshot successfully disabled.")).catch(e => customAlert("Error", e.message));
+                            const bashScript = `
+                                ${cleanOldCron}
+                                if ! command -v snapper >/dev/null 2>&1; then echo "ERROR: Snapper is not installed on this system."; exit 1; fi;
+                                CFG_NAME=$(snapper list-configs 2>/dev/null | awk -v mnt="${targetDir}" '$3 == mnt || $3 == mnt"/" {print $1; exit}');
+                                if [ -n "$CFG_NAME" ] && [ "$CFG_NAME" != "Config" ]; then
+                                    snapper -c "$CFG_NAME" set-config TIMELINE_CREATE=no;
+                                    echo "Snapper timeline successfully disabled for config: $CFG_NAME.";
+                                else
+                                    echo "No active Snapper config found for ${targetDir}, nothing to disable.";
+                                fi
+                            `;
+                            cmd(["sh", "-c", bashScript]).then(out => customAlert("Success", out)).catch(e => customAlert("Error", e.message));
                         } else {
                             setTimeout(() => {
-                                customPrompt("Snapshot Retention Policy", "How many recent snapshots do you want to keep?\n(Older snapshots will be deleted automatically)", "5", "Save Configuration", (limitStr) => {
+                                customPrompt("Snapper Retention Limit", "How many recent snapshots do you want Snapper to keep?", "5", "Apply to Snapper", (limitStr) => {
                                     if(!limitStr) return;
                                     const limit = parseInt(limitStr, 10);
-                                    if(isNaN(limit) || limit < 1) { customAlert("Error", "Invalid retention limit. Must be a number greater than 0."); return; }
+                                    if(isNaN(limit) || limit < 1) { customAlert("Error", "Invalid retention limit."); return; }
 
-                                    const scriptContent = `#!/bin/bash\\nmkdir -p "${targetDir}/.snapshots"\\nbtrfs subvolume snapshot -r "${targetDir}" "${targetDir}/.snapshots/auto_$(date +\\%%Y\\%%m\\%%d_\\%%H\\%%M)"\\nls -dt "${targetDir}/.snapshots/auto_"* 2>/dev/null | tail -n +${limit + 1} | xargs -r btrfs subvolume delete\\n`;
-                                    
-                                    const setupCmd = `${cleanCmd} && printf '${scriptContent}' > /etc/cron.${freq}/btrfs_${safeName} && chmod +x /etc/cron.${freq}/btrfs_${safeName}`;
+                                    const bashScript = `
+                                        ${cleanOldCron}
+                                        if ! command -v snapper >/dev/null 2>&1; then echo "ERROR: Snapper is not installed.\\nPlease install it first (e.g. pacman -S snapper or apt install snapper)."; exit 1; fi;
+                                        
+                                        MNT_PT="${targetDir}"
+                                        CFG_NAME=$(snapper list-configs 2>/dev/null | awk -v mnt="$MNT_PT" '$3 == mnt || $3 == mnt"/" {print $1; exit}')
+                                        
+                                        if [ -z "$CFG_NAME" ] || [ "$CFG_NAME" = "Config" ]; then
+                                            if [ "$MNT_PT" = "/" ]; then
+                                                CFG_NAME="root"
+                                            else
+                                                CFG_NAME="vol_$(basename "$MNT_PT" | tr -dc 'a-zA-Z0-9')"
+                                            fi
+                                            snapper -c "$CFG_NAME" create-config "$MNT_PT" || { echo "ERROR: Failed to create snapper config for $MNT_PT. It might already exist in Snapper."; exit 1; }
+                                        fi
+                                        
+                                        H=0; D=0; W=0
+                                        [ "${freq}" = "hourly" ] && H="${limit}"
+                                        [ "${freq}" = "daily" ] && D="${limit}"
+                                        [ "${freq}" = "weekly" ] && W="${limit}"
+                                        
+                                        snapper -c "$CFG_NAME" set-config TIMELINE_CREATE=yes TIMELINE_LIMIT_HOURLY="$H" TIMELINE_LIMIT_DAILY="$D" TIMELINE_LIMIT_WEEKLY="$W" TIMELINE_LIMIT_MONTHLY=0 TIMELINE_LIMIT_YEARLY=0
+                                        
+                                        systemctl enable --now snapper-timeline.timer snapper-cleanup.timer >/dev/null 2>&1 || true
+                                        
+                                        printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRetention Limit: %s\\n" "$CFG_NAME" "${freq}" "${limit}"
+                                    `;
 
-                                    cmd(["sh", "-c", setupCmd])
-                                        .then(() => customAlert("Success", `Auto-snapshot configured successfully!\nFrequency: ${freq.toUpperCase()}\nRetention: Keep latest ${limit} snapshots`))
-                                        .catch(e => customAlert("Error", "Failed to configure schedule: " + e.message));
+                                    cmd(["sh", "-c", bashScript])
+                                        .then(out => customAlert("Success", out))
+                                        .catch(e => customAlert("Error", e.message));
                                 });
                             }, 300);
                         }
                     });
                 }
+                // === AKHIR SISTEM INTEGRASI SNAPPER NATIVE ===
+                
                 else if(op === "create") { const nm = $(`new-subvol-${i}`)?.value.trim(); if(!nm) { customAlert("Error", "Name required!"); return;} cmd(["btrfs", "subvolume", "create", mnt === "/" ? `/${nm}` : `${mnt}/${nm}`]).then(()=>{ if($(`new-subvol-${i}`)) $(`new-subvol-${i}`).value = ""; App.fetchSubvols(mnt, i); }).catch(e=>customAlert("Failed", e.message)); }
                 else if(op === "del") customConfirm("Delete", `Delete "${p}"?`, "Delete", () => cmd(["btrfs", "subvolume", "delete", mnt === "/" ? `/${p}` : `${mnt}/${p}`]).then(()=>App.fetchSubvols(mnt, i)).catch(e=>customAlert("Failed", e.message)));
                 else if(op.startsWith("snap")) customPrompt("Snapshot", "Name:", sName(new Date().toISOString().replace(/[:.]/g,"-").slice(0,19)), "Create", (n) => { if(n) cmd(["btrfs", "subvolume", "snapshot", p ? (mnt==="/"?`/${p}`:`${mnt}/${p}`) : mnt, mnt==="/"?`/${n}`:`${mnt}/${n}`]).then(()=>App.fetchSubvols(mnt, i||tgt.getAttribute("data-index"))).catch(e=>customAlert("Failed", e.message)); });
