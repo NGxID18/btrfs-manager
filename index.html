@@ -1,113 +1,200 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
+  <head>
     <title>BTRFS Manager</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="../base1/cockpit.css" type="text/css" rel="stylesheet">
-    <link href="style.css" type="text/css" rel="stylesheet">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link href="../base1/cockpit.css" type="text/css" rel="stylesheet" />
+    <link href="style.css" type="text/css" rel="stylesheet" />
+
     <script src="../base1/cockpit.js"></script>
-    
-    <script src="src/helper.js?v=2"></script>
-    <script src="src/engine.js?v=2" defer></script>
-    <script src="src/router.js?v=2" defer></script>
-</head>
-<body>
+    <script src="src/helper.js?v=4"></script>
+    <script src="src/engine.js?v=4" defer></script>
+    <script src="src/router.js?v=4" defer></script>
+  </head>
+  <body>
     <div class="header-section">
-        <h2>Native BTRFS Management</h2>
-        <p class="subtitle">Manage volumes, RAID topologies, subvolumes, and snapshots.</p>
+      <h2>Native BTRFS Management</h2>
+      <p class="subtitle">
+        Manage volumes, RAID topologies, subvolumes, and snapshots.
+      </p>
     </div>
 
     <div id="view-master">
-        <div id="disk-container" class="disk-grid"></div>
-        <div class="divider"></div>
-        <div class="action-buttons animated-view">
-            <button class="btn btn-primary" id="btn-create-raid">Create New RAID Volume</button>
-            <button class="btn btn-secondary" id="btn-refresh">Refresh Data</button>
-        </div>
+      <div id="disk-container" class="disk-grid"></div>
+      <div class="divider"></div>
+      <div class="action-buttons animated-view">
+        <button class="btn btn-primary" id="btn-create-raid">
+          Create New RAID Volume
+        </button>
+        <button class="btn btn-secondary" id="btn-refresh">Refresh Data</button>
+      </div>
 
-        <div id="raid-form" class="btrfs-card raid-form-card hidden-element animated-view">
-            <h3>Create New BTRFS Volume</h3>
-            <div class="form-group">
-                <p class="form-label-block">1. Select Target Disks:</p>
-                <div id="available-disks" class="available-disks-box">Scanning block devices...</div>
-            </div>
-            <div class="form-group">
-                <p class="form-label-block">2. Volume Configuration:</p>
-                <label for="raid-profile" class="form-label">Data Profile:</label>
-                <select id="raid-profile" class="form-input">
-                    <option value="single">Single (1 Disk)</option>
-                    <option value="raid1">RAID 1 (Mirror - Min 2 Disks)</option>
-                    <option value="raid0">RAID 0 (Stripe - Min 2 Disks)</option>
-                    <option value="raid10">RAID 10 (Stripe+Mirror - Min 4 Disks)</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="volume-label" class="form-label">Volume Label:</label>
-                <input type="text" id="volume-label" class="form-input" placeholder="e.g., DataServer">
-            </div>
-            <div class="form-actions">
-                <button class="btn btn-primary" id="btn-execute-format">Format & Create Volume</button>
-                <button class="btn btn-secondary" id="btn-cancel-format">Cancel</button>
-            </div>
-            <p id="format-status" class="status-console hidden-element mt-15"></p>
+      <div
+        id="raid-form"
+        class="btrfs-card raid-form-card hidden-element animated-view"
+      >
+        <h3>Create New BTRFS Volume</h3>
+        <div class="form-group">
+          <p class="form-label-block">1. Select Target Disks:</p>
+          <div id="available-disks" class="available-disks-box">
+            Scanning block devices...
+          </div>
         </div>
+        <div class="form-group">
+          <p class="form-label-block">2. Volume Configuration:</p>
+          <label for="raid-profile" class="form-label">Data Profile:</label>
+          <select id="raid-profile" class="form-input">
+            <option value="single">Single (1 Disk)</option>
+            <option value="raid1">RAID 1 (Mirror - Min 2 Disks)</option>
+            <option value="raid0">RAID 0 (Stripe - Min 2 Disks)</option>
+            <option value="raid10">
+              RAID 10 (Stripe+Mirror - Min 4 Disks)
+            </option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="volume-label" class="form-label">Volume Label:</label>
+          <input
+            type="text"
+            id="volume-label"
+            class="form-input"
+            placeholder="e.g., DataServer"
+          />
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" id="btn-execute-format">
+            Format & Create Volume
+          </button>
+          <button class="btn btn-secondary" id="btn-cancel-format">
+            Cancel
+          </button>
+        </div>
+        <p id="format-status" class="status-console hidden-element mt-15"></p>
+      </div>
     </div>
 
     <div id="view-detail" class="hidden-element">
-        <div class="mb-25">
-            <button class="btn btn-secondary btn-sm" id="btn-back-master">Back to Dashboard</button>
-        </div>
-        <div id="detail-container"></div>
+      <div class="mb-25">
+        <button class="btn btn-secondary btn-sm" id="btn-back-master">
+          Back to Dashboard
+        </button>
+      </div>
+      <div id="detail-container"></div>
     </div>
 
     <div id="add-dev-modal" class="modal-overlay hidden-element">
-        <div class="modal-content">
-            <h3>Add Device to Volume</h3>
-            <p>Select an empty disk to merge into: <strong id="modal-mount-target" class="text-primary"></strong></p>
-            <div class="form-group mt-15">
-                <select id="modal-disk-select" class="form-input w-100"></select>
-            </div>
-            <div class="warning-box mb-15 text-danger">
-                <strong>Warning:</strong> All existing data and partitions on the selected disk will be permanently wiped!
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-secondary" id="btn-close-add-modal">Cancel</button>
-                <button class="btn btn-primary" id="btn-confirm-add-dev" disabled>Add Disk</button>
-            </div>
+      <div class="modal-content">
+        <h3>Add Device to Volume</h3>
+        <p>
+          Select an empty disk to merge into:
+          <strong id="modal-mount-target" class="text-primary"></strong>
+        </p>
+        <div class="form-group mt-15">
+          <select id="modal-disk-select" class="form-input w-100"></select>
         </div>
+        <div class="warning-box mb-15 text-danger">
+          <strong>Warning:</strong> All existing data and partitions on the
+          selected disk will be permanently wiped!
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="btn-close-add-modal">
+            Cancel
+          </button>
+          <button class="btn btn-primary" id="btn-confirm-add-dev" disabled>
+            Add Disk
+          </button>
+        </div>
+      </div>
     </div>
 
     <div id="manage-subvol-modal" class="modal-overlay hidden-element">
-        <div class="modal-content">
-            <h3>Manage Subvolume</h3>
-            <p class="mb-15">Path: <strong id="modal-subvol-path"></strong> <br><span class="text-muted" id="modal-subvol-id"></span></p>
-            <div class="modal-action-grid">
-                <button class="btn btn-secondary btn-block btn-action" data-action="subvol-ops" data-op="restore">Restore / Clone</button>
-                <button class="btn btn-secondary btn-block btn-action" data-action="subvol-ops" data-op="snap-subvol">Create Snapshot</button>
-                <button class="btn btn-secondary btn-block btn-action" data-action="subvol-ops" data-op="quota">Set Quota Limit</button>
-                <button class="btn btn-secondary btn-block btn-action" data-action="subvol-ops" data-op="default">Set as Default Mount</button>
-                <button class="btn btn-danger btn-block btn-action" data-action="subvol-ops" data-op="del">Delete Permanently</button>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-secondary" id="btn-close-subvol-modal">Close</button>
-            </div>
+      <div class="modal-content">
+        <h3>Manage Subvolume</h3>
+        <p class="mb-15">
+          Path: <strong id="modal-subvol-path"></strong> <br /><span
+            class="text-muted"
+            id="modal-subvol-id"
+          ></span>
+        </p>
+        <div class="modal-action-grid">
+          <button
+            class="btn btn-secondary btn-block btn-action"
+            data-action="subvol-ops"
+            data-op="restore"
+          >
+            Restore / Clone
+          </button>
+          <button
+            class="btn btn-secondary btn-block btn-action"
+            data-action="subvol-ops"
+            data-op="snap-subvol"
+          >
+            Create Snapshot
+          </button>
+          <button
+            class="btn btn-secondary btn-block btn-action"
+            data-action="subvol-ops"
+            data-op="quota"
+          >
+            Set Quota Limit
+          </button>
+          <button
+            class="btn btn-secondary btn-block btn-action"
+            data-action="subvol-ops"
+            data-op="default"
+          >
+            Set as Default Mount
+          </button>
+          <button
+            class="btn btn-secondary btn-block btn-action"
+            id="btn-toggle-cow"
+            data-action="subvol-ops"
+            data-op="disable-cow"
+          >
+            Disable CoW (No_COW)
+          </button>
+          <button
+            class="btn btn-danger btn-block btn-action"
+            data-action="subvol-ops"
+            data-op="del"
+          >
+            Delete Permanently
+          </button>
         </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="btn-close-subvol-modal">
+            Close
+          </button>
+        </div>
+      </div>
     </div>
 
     <div id="generic-modal" class="modal-overlay hidden-element">
-        <div class="modal-content">
-            <h3 id="generic-modal-title">Title</h3>
-            <p id="generic-modal-message" class="mb-15"></p>
-            <div id="generic-modal-input-container" class="form-group hidden-element mb-15">
-                <input type="text" id="generic-modal-input" class="form-input w-100">
-                <select id="generic-modal-select" class="form-input w-100 hidden-element"></select>
-            </div>
-            <div class="modal-actions">
-                <button class="btn btn-secondary" id="generic-modal-cancel">Cancel</button>
-                <button class="btn btn-primary" id="generic-modal-confirm">OK</button>
-            </div>
+      <div class="modal-content">
+        <h3 id="generic-modal-title">Title</h3>
+        <p id="generic-modal-message" class="mb-15"></p>
+        <div
+          id="generic-modal-input-container"
+          class="form-group hidden-element mb-15"
+        >
+          <input
+            type="text"
+            id="generic-modal-input"
+            class="form-input w-100"
+          />
+          <select
+            id="generic-modal-select"
+            class="form-input w-100 hidden-element"
+          ></select>
         </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="generic-modal-cancel">
+            Cancel
+          </button>
+          <button class="btn btn-primary" id="generic-modal-confirm">OK</button>
+        </div>
+      </div>
     </div>
-</body>
+  </body>
 </html>
