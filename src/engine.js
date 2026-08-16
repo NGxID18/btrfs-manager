@@ -410,19 +410,32 @@ echo "$STATUS"
                     </div>
                 </div>
                 <div class="detail-right-col animated-view">
-                    <div class="btrfs-card h-100-col">
-                        <h4 class="section-title">Subvolumes & Snapshots</h4>
+                    <!-- Kotak Atas: Subvolumes Management -->
+                    <div class="btrfs-card mb-20">
+                        <h4 class="section-title">Subvolumes Management</h4>
                         ${
                           v.mountPoint
                             ? `<div class="flex-wrap-gap mb-15">
                             <input type="text" id="new-subvol-${v.idx}" placeholder="New subvolume name..." class="form-input flex-grow">
-                            <button class="btn btn-primary btn-sm btn-action" data-action="subvol-ops" data-op="create" data-mount="${v.mountPoint}" data-index="${v.idx}">Create</button> 
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="snap-root" data-mount="${v.mountPoint}">Snap Root</button>
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="auto-snap" data-path="" data-mount="${v.mountPoint}">Auto-Snap</button>
-                            <button class="btn btn-danger btn-sm btn-action" data-action="subvol-ops" data-op="purge-snaps" data-mount="${v.mountPoint}">Purge Old</button>
+                            <button class="btn btn-primary btn-sm btn-action" data-action="subvol-ops" data-op="create" data-mount="${v.mountPoint}" data-index="${v.idx}">Create Subvolume</button> 
                         </div>
                         <div id="subvol-list-${v.idx}" class="subvol-list-full"><p class="p-15-muted">Loading subvolumes...</p></div>`
-                            : '<p class="text-warning">Mount pool filesystem to unlock subvolume tree operations.</p>'
+                            : '<p class="text-warning">Mount pool filesystem to unlock subvolume operations.</p>'
+                        }
+                    </div>
+
+                    <!-- Kotak Bawah: Snapshots & Rollback Management -->
+                    <div class="btrfs-card">
+                        <h4 class="section-title">Snapshots & Rollback Management</h4>
+                        ${
+                          v.mountPoint
+                            ? `<div class="flex-wrap-gap mb-15">
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="snap-root" data-mount="${v.mountPoint}">Snapshot (${v.mountPoint === "/" ? "Root" : v.mountPoint})</button>
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="auto-snap" data-path="" data-mount="${v.mountPoint}">Auto-Snap (Snapper)</button>
+                            <button class="btn btn-danger btn-sm btn-action" data-action="subvol-ops" data-op="purge-snaps" data-mount="${v.mountPoint}">Purge Old</button>
+                        </div>
+                        <div id="snapshot-list-${v.idx}" class="subvol-list-full"><p class="p-15-muted">Loading snapshots...</p></div>`
+                            : '<p class="text-warning">Mount pool filesystem to unlock snapshot operations.</p>'
                         }
                     </div>
                 </div>
@@ -430,9 +443,9 @@ echo "$STATUS"
     if (v.mountPoint) this.fetchSubvols(v.mountPoint, v.idx);
   },
 
-  /* STREAMING_CHUNK:Fetching Live BTRFS Subvolumes across Fedora, Debian, Arch... */
+  /* STREAMING_CHUNK:Fetching Live BTRFS Subvolumes & Snapshots... */
   async fetchSubvols(mount, idx) {
-    if (!$(`subvol-list-${idx}`)) return;
+    if (!$(`subvol-list-${idx}`) && !$(`snapshot-list-${idx}`)) return;
     try {
       const script = `
 mnt="$1"
@@ -486,7 +499,20 @@ btrfs subvolume list "$SCAN_DIR" 2>/dev/null | while read -r line; do
         if echo "$attr" | grep -q "C"; then nocow="true"; fi
     fi
 
-    echo "$id|$sub_path|$nocow|$ctime"
+    MOUNT_PT=$(findmnt -n -l -o TARGET,SOURCE -t btrfs 2>/dev/null | grep -v "^/tmp" | while read -r t_m s_m; do
+        s_in=$(echo "$s_m" | sed -n "s/.*\\[\\/*\\(.*\\)\\]/\\1/p")
+        if [ -n "$s_in" ] && [ "$s_in" = "$sub_path" ]; then
+            echo "$t_m"
+            break
+        fi
+    done)
+    
+    IN_FSTAB="false"
+    if grep -qs -E "subvol=(/|@)?$sub_path\\b" /etc/fstab; then
+        IN_FSTAB="true"
+    fi
+
+    echo "$id|$sub_path|$nocow|$ctime|$MOUNT_PT|$IN_FSTAB"
 done
 
 if [ "$IS_MOUNTED" -eq 1 ]; then
@@ -495,47 +521,97 @@ fi
 rmdir "$TMP" 2>/dev/null || true
 `;
       const out = await cmd(["sh", "-c", script, "--", mount]);
-      const html = out
+      let subvolsHtml = "";
+      let snapshotsHtml = "";
+
+      out
         .trim()
         .split("\n")
         .filter((l) => l.trim())
-        .map((line) => {
+        .forEach((line) => {
           const parts = line.split("|");
-          if (parts.length < 4) return "";
+          if (parts.length < 4) return;
           const id = parts[0];
           const path = parts[1];
           const nocow = parts[2] === "true";
-          const ctime = parts.slice(3).join("|");
+          const ctime = parts[3];
+          const mountPt = parts[4] || "";
+          const inFstab = parts[5] === "true";
 
           const isRootSubvol =
+            mountPt === "/" ||
             (mount === "/" && (path === "@" || path === "" || path === "root" || path === "@root")) ||
             path === "@";
 
-          const rootBadge = isRootSubvol
-            ? `<span style="color: #48bb78; border: 1px solid #48bb78; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(72, 187, 120, 0.15);">OS Root (/)</span>`
-            : "";
+          const isProtected = isRootSubvol || Boolean(mountPt) || inFstab;
 
-          const cowBadge = nocow
-            ? `<span style="color: #d69e2e; border: 1px solid #d69e2e; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(214, 158, 46, 0.1);">CoW Disabled</span>`
-            : "";
+          const isSnapshot =
+            path.includes(".snapshots") ||
+            path.includes("snapshot") ||
+            path.includes("_snap_") ||
+            path.includes("snap-");
 
-          return `<div class="subvol-item animated-view">
-                    <div class="subvol-info">
-                        <span class="btrfs-code">/${path}</span>
-                        <span class="text-primary mt-5" style="font-size: 13px; font-weight: 600;">Created: ${ctime}</span>
-                        <span class="text-muted" style="font-size: 12px; margin-top: 2px;">ID: ${id} ${rootBadge} ${cowBadge}</span>
-                    </div>
-                    <button class="btn btn-secondary btn-sm btn-action" data-action="manage-subvol" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}" data-nocow="${nocow}" data-is-root="${isRootSubvol}">Manage</button>
-                </div>`;
-        })
-        .join("");
+          if (isSnapshot) {
+            snapshotsHtml += `<div class="subvol-item animated-view">
+                <div class="subvol-info">
+                    <span class="btrfs-code">/${path}</span>
+                    <span class="text-primary mt-5" style="font-size: 13px; font-weight: 600;">Created: ${ctime}</span>
+                    <span class="text-muted" style="font-size: 12px; margin-top: 2px;">ID: ${id} <span style="color: #9f7aea; border: 1px solid #9f7aea; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(159, 122, 234, 0.15);">Snapshot</span></span>
+                </div>
+                <div class="flex-wrap-gap" style="align-items: center;">
+                    <button class="btn btn-primary btn-sm btn-action" data-action="subvol-ops" data-op="default" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Set as Default Mount</button>
+                    <button class="btn btn-danger btn-sm btn-action" data-action="subvol-ops" data-op="del" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Delete</button>
+                </div>
+            </div>`;
+          } else {
+            let badgeHtml = "";
+            if (isRootSubvol) {
+              badgeHtml = `<span style="color: #48bb78; border: 1px solid #48bb78; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(72, 187, 120, 0.15);">OS Root (/)</span>`;
+            } else if (mountPt) {
+              badgeHtml = `<span style="color: #63b3ed; border: 1px solid #63b3ed; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(66, 153, 225, 0.15);">Mounted: ${mountPt}</span>`;
+            } else if (inFstab) {
+              badgeHtml = `<span style="color: #d69e2e; border: 1px solid #d69e2e; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(214, 158, 46, 0.15);">In /etc/fstab</span>`;
+            }
 
-      $(`subvol-list-${idx}`).innerHTML =
-        html ||
-        "<p class='mt-15 text-muted'>No custom subvolumes found inside this pool root.</p>";
+            const cowBadge = nocow
+              ? `<span style="color: #d69e2e; border: 1px solid #d69e2e; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(214, 158, 46, 0.1);">CoW Disabled</span>`
+              : "";
+
+            subvolsHtml += `<div class="subvol-item animated-view">
+                <div class="subvol-info">
+                    <span class="btrfs-code">/${path}</span>
+                    <span class="text-primary mt-5" style="font-size: 13px; font-weight: 600;">Created: ${ctime}</span>
+                    <span class="text-muted" style="font-size: 12px; margin-top: 2px;">ID: ${id} ${badgeHtml} ${cowBadge}</span>
+                </div>
+                <div class="flex-wrap-gap" style="align-items: center;">
+                    <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="${nocow ? 'enable-cow' : 'disable-cow'}" data-mount="${mount}" data-path="${path}" data-index="${idx}">
+                        ${nocow ? 'Enable CoW (+C)' : 'Disable CoW (No_COW)'}
+                    </button>
+                    ${
+                      !isProtected
+                        ? `<button class="btn btn-danger btn-sm btn-action" data-action="subvol-ops" data-op="del" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Delete</button>`
+                        : ""
+                    }
+                </div>
+            </div>`;
+          }
+        });
+
+      if ($(`subvol-list-${idx}`)) {
+        $(`subvol-list-${idx}`).innerHTML =
+          subvolsHtml ||
+          "<p class='p-15-muted'>No active user subvolumes found inside this pool root.</p>";
+      }
+      if ($(`snapshot-list-${idx}`)) {
+        $(`snapshot-list-${idx}`).innerHTML =
+          snapshotsHtml ||
+          "<p class='p-15-muted'>No snapshots created yet for this volume.</p>";
+      }
     } catch (e) {
-      $(`subvol-list-${idx}`).innerHTML =
-        `<p class='text-danger mt-15'>Load failed: ${e.message}</p>`;
+      if ($(`subvol-list-${idx}`)) {
+        $(`subvol-list-${idx}`).innerHTML =
+          `<p class='text-danger mt-15'>Load failed: ${e.message}</p>`;
+      }
     }
   },
 };

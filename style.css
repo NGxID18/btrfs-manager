@@ -180,6 +180,7 @@ body {
 .detail-right-col {
   display: flex;
   flex-direction: column;
+  gap: 25px;
   height: 100%;
 }
 
@@ -388,7 +389,7 @@ select.form-input option {
   background: var(--bg-main);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  max-height: 500px;
+  max-height: 280px;
   overflow-y: auto;
   flex-grow: 1;
 }

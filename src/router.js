@@ -482,70 +482,17 @@ echo "Cleaned"
           );
           break;
 
-        case "manage-subvol": {
-          if (!$("manage-subvol-modal")) return;
-          $("manage-subvol-modal").classList.remove("hidden-element");
-          const p = tgt.getAttribute("data-path") || "";
-          const subId = tgt.getAttribute("data-subid") || "";
-          const isRootSubvol =
-            tgt.getAttribute("data-is-root") === "true" ||
-            (mnt === "/" && (p === "@" || p === "" || p === "root" || p === "@root")) ||
-            p === "@";
-
-          $("modal-subvol-path").innerText = "/" + p;
-          $("modal-subvol-id").innerText = "(ID: " + subId + ")";
-
-          const isNoCow = tgt.getAttribute("data-nocow") === "true";
-          const cowBtn = $("btn-toggle-cow");
-          if (cowBtn) {
-            cowBtn.innerText = isNoCow
-              ? "Enable CoW (+C)"
-              : "Disable CoW (No_COW)";
-            cowBtn.setAttribute(
-              "data-op",
-              isNoCow ? "enable-cow" : "disable-cow",
-            );
-          }
-
-          // Safety guard for root subvolume deletion
-          const delBtn = $("btn-delete-subvol");
-          const rootWarning = $("modal-subvol-root-warning");
-          if (delBtn) {
-            if (isRootSubvol) {
-              delBtn.classList.add("hidden-element");
-              delBtn.disabled = true;
-              if (rootWarning) rootWarning.classList.remove("hidden-element");
-            } else {
-              delBtn.classList.remove("hidden-element");
-              delBtn.disabled = false;
-              if (rootWarning) rootWarning.classList.add("hidden-element");
-            }
-          }
-
-          document
-            .querySelectorAll("#manage-subvol-modal .btn-action")
-            .forEach((b) => {
-              b.setAttribute("data-mount", mnt);
-              b.setAttribute("data-path", p);
-              b.setAttribute("data-subid", subId);
-              b.setAttribute("data-index", tgt.getAttribute("data-index"));
-              b.setAttribute("data-is-root", isRootSubvol ? "true" : "false");
-            });
-          break;
-        }
-
         case "subvol-ops":
-          if ($("manage-subvol-modal"))
-            $("manage-subvol-modal").classList.add("hidden-element");
           const op = tgt.getAttribute("data-op");
           const p = tgt.getAttribute("data-path") || "";
           const i = tgt.getAttribute("data-index");
           const subId = tgt.getAttribute("data-subid") || "";
+          const vClean = (mnt === "/" ? "root" : (mnt || "vol").replace(/\//g, "").replace(/[^a-zA-Z0-9]/g, "_")) || "vol";
           const sName = (dt) =>
-            p ? `${p.split("/").pop()}_snap_${dt}` : `root_snap_${dt}`;
+            p ? `${p.split("/").pop()}_snap_${dt}` : `${vClean}_snap_${dt}`;
 
           if (op === "auto-snap") {
-            const targetName = p ? `/${p}` : "Root Volume";
+            const targetName = p ? `/${p}` : (mnt === "/" ? "Root Volume" : mnt);
             customSelect(
               "Snapper Integration",
               `Select Snapper timeline schedule for ${targetName}:`,
@@ -676,15 +623,17 @@ printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRet
               })
               .catch((e) => customAlert("Failed", e.message));
           } else if (op === "del") {
-            const isRootSubvol =
-              tgt.getAttribute("data-is-root") === "true" ||
+            const mountedAt = tgt.getAttribute("data-mounted-at") || "";
+            const isProtected =
+              tgt.getAttribute("data-is-protected") === "true" ||
+              Boolean(mountedAt) ||
               (mnt === "/" && (p === "@" || p === "" || p === "root" || p === "@root")) ||
               p === "@";
 
-            if (isRootSubvol) {
+            if (isProtected) {
               customAlert(
-                "Protected Root Subvolume",
-                "This subvolume is the active Operating System Root (/) and cannot be deleted to prevent system destruction.",
+                "Protected Active Subvolume",
+                `This subvolume is currently mounted on "${mountedAt || "/"}" (or configured in /etc/fstab) and cannot be deleted while active on the system.`,
               );
               return;
             }
@@ -699,14 +648,20 @@ MNT="$1"
 SUB_PATH="$2"
 SUB_ID="$3"
 
-# Kernel safety check: Verify against active system root subvolume
-ACTIVE_ROOT_SUBVOL=$(findmnt -n -o FSROOT -T "/" 2>/dev/null | sed 's/^\\///')
-if [ -n "$ACTIVE_ROOT_SUBVOL" ] && [ "$ACTIVE_ROOT_SUBVOL" = "$SUB_PATH" ]; then
-    echo "ERROR: Protected active OS Root subvolume. Deletion blocked."
+# Safety check: Verify against any active real mountpoint or fstab
+FOUND_MOUNT=$(findmnt -n -l -o TARGET,SOURCE -t btrfs 2>/dev/null | grep -v "^/tmp" | while read -r t_m s_m; do
+    s_in=$(echo "$s_m" | sed -n "s/.*\\[\\/*\\(.*\\)\\]/\\1/p")
+    if [ -n "$s_in" ] && [ "$s_in" = "$SUB_PATH" ]; then
+        echo "$t_m"
+        break
+    fi
+done)
+if [ -n "$FOUND_MOUNT" ]; then
+    echo "ERROR: Subvolume is actively mounted on $FOUND_MOUNT. Deletion blocked."
     exit 1
 fi
-if [ "$SUB_PATH" = "@" ] && [ "$MNT" = "/" ]; then
-    echo "ERROR: Protected active OS Root subvolume. Deletion blocked."
+if grep -qs -E "subvol=(/|@)?$SUB_PATH\\b" /etc/fstab; then
+    echo "ERROR: Subvolume is referenced in /etc/fstab. Deletion blocked."
     exit 1
 fi
 
@@ -759,13 +714,14 @@ fi
               },
             );
           } else if (op.startsWith("snap")) {
+            const snapPromptTitle = mnt === "/" ? "Snapshot Root (/)" : `Snapshot Volume (${mnt})`;
             customPrompt(
-              "Snapshot",
-              "Name:",
+              snapPromptTitle,
+              "Snapshot Name:",
               sName(
                 new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19),
               ),
-              "Create",
+              "Create Snapshot",
               (n) => {
                 if (n) {
                   const script = `
@@ -776,6 +732,10 @@ DEST="$3"
 DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | sed 's/\\[.*\\]//' | head -n 1)
 [ -z "$DEV" ] && DEV=$(df "$MNT" 2>/dev/null | awk 'NR==2 {print $1}')
 echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
+
+# Find underlying subvolume for MNT (e.g. @home for /home)
+MNT_SUBVOL=$(findmnt -n -o FSROOT -T "$MNT" 2>/dev/null | sed 's/^\\///')
+[ -z "$SRC" ] && [ -n "$MNT_SUBVOL" ] && SRC="$MNT_SUBVOL"
 
 TMP=$(mktemp -d)
 IS_MOUNTED=0
@@ -789,10 +749,10 @@ fi
 
 SNAP_DONE=0
 if [ "$IS_MOUNTED" -eq 1 ]; then
-    if [ -z "$SRC" ]; then
-        btrfs subvolume snapshot "$MNT" "$TMP/$DEST" 2>/dev/null && SNAP_DONE=1
-    else
+    if [ -n "$SRC" ] && [ -e "$TMP/$SRC" ]; then
         btrfs subvolume snapshot "$TMP/$SRC" "$TMP/$DEST" 2>/dev/null && SNAP_DONE=1
+    else
+        btrfs subvolume snapshot "$MNT" "$TMP/$DEST" 2>/dev/null && SNAP_DONE=1
     fi
 fi
 
@@ -827,124 +787,11 @@ fi
                 }
               },
             );
-          } else if (op === "restore") {
-            customPrompt(
-              "Restore/Clone",
-              "Target name:",
-              p.split("_snap_")[0] + "_restored",
-              "Restore",
-              (n) => {
-                if (n) {
-                  const script = `
-MNT="$1"
-SRC="$2"
-DEST="$3"
-
-DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | sed 's/\\[.*\\]//' | head -n 1)
-[ -z "$DEV" ] && DEV=$(df "$MNT" 2>/dev/null | awk 'NR==2 {print $1}')
-echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
-
-TMP=$(mktemp -d)
-IS_MOUNTED=0
-if [ -b "$DEV" ] || [ -n "$DEV" ]; then
-    if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
-        IS_MOUNTED=1
-    elif mount -t btrfs -o subvolid=5,context="system_u:object_r:tmp_t:s0" "$DEV" "$TMP" 2>/dev/null; then
-        IS_MOUNTED=1
-    fi
-fi
-
-RESTORE_DONE=0
-if [ "$IS_MOUNTED" -eq 1 ] && [ -e "$TMP/$SRC" ]; then
-    btrfs subvolume snapshot "$TMP/$SRC" "$TMP/$DEST" 2>/dev/null && RESTORE_DONE=1
-fi
-
-if [ "$RESTORE_DONE" -eq 0 ]; then
-    TARGET_SRC="$MNT/$SRC"
-    [ ! -e "$TARGET_SRC" ] && [ -e "/$SRC" ] && TARGET_SRC="/$SRC"
-    btrfs subvolume snapshot "$TARGET_SRC" "$MNT/$DEST" 2>/dev/null && RESTORE_DONE=1
-fi
-
-if [ "$IS_MOUNTED" -eq 1 ]; then
-    umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true
-fi
-rmdir "$TMP" 2>/dev/null || true
-
-if [ "$RESTORE_DONE" -eq 1 ]; then
-    echo "Success"
-    exit 0
-else
-    echo "Failed to restore snapshot."
-    exit 1
-fi
-`;
-                  cmd(["sh", "-c", script, "--", mnt, p, n])
-                    .then(() => App.fetchSubvols(mnt, i))
-                    .catch((e) => customAlert("Failed", e.message));
-                }
-              },
-            );
-          } else if (op === "quota") {
-            customPrompt(
-              "Quota",
-              `Set max limit (e.g. 50G):`,
-              "50G",
-              "Apply",
-              (l) => {
-                if (l) {
-                  const script = `
-MNT="$1"
-SUB_PATH="$2"
-LIMIT="$3"
-
-DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | sed 's/\\[.*\\]//' | head -n 1)
-[ -z "$DEV" ] && DEV=$(df "$MNT" 2>/dev/null | awk 'NR==2 {print $1}')
-echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
-
-TMP=$(mktemp -d)
-IS_MOUNTED=0
-if [ -b "$DEV" ] || [ -n "$DEV" ]; then
-    if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
-        IS_MOUNTED=1
-    elif mount -t btrfs -o subvolid=5,context="system_u:object_r:tmp_t:s0" "$DEV" "$TMP" 2>/dev/null; then
-        IS_MOUNTED=1
-    fi
-fi
-
-btrfs quota enable "$MNT" 2>/dev/null || true
-TARGET_PATH=""
-if [ "$IS_MOUNTED" -eq 1 ] && [ -e "$TMP/$SUB_PATH" ]; then
-    TARGET_PATH="$TMP/$SUB_PATH"
-elif [ -e "$MNT/$SUB_PATH" ]; then
-    TARGET_PATH="$MNT/$SUB_PATH"
-elif [ -e "/$SUB_PATH" ]; then
-    TARGET_PATH="/$SUB_PATH"
-fi
-
-if [ -n "$TARGET_PATH" ]; then
-    btrfs qgroup limit "$LIMIT" "$TARGET_PATH"
-    RES=$?
-else
-    RES=1
-fi
-
-if [ "$IS_MOUNTED" -eq 1 ]; then
-    umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true
-fi
-rmdir "$TMP" 2>/dev/null || true
-exit $RES
-`;
-                  cmd(["sh", "-c", script, "--", mnt, p, l])
-                    .then(() => customAlert("Success", "Quota Applied"))
-                    .catch((e) => customAlert("Error", e.message));
-                }
-              },
-            );
           } else if (op === "default") {
             customConfirm(
-              "Set Default",
-              `Make ID ${tgt.getAttribute("data-subid")} default?`,
-              "Confirm",
+              "Set as Default Mount",
+              `Set subvolume ID ${tgt.getAttribute("data-subid")} (${p}) as the default root mount for ${mnt}?\n\n(This will rollback the default filesystem view to this snapshot upon next mount.)`,
+              "Confirm Rollback",
               () =>
                 cmd([
                   "btrfs",
@@ -953,7 +800,7 @@ exit $RES
                   tgt.getAttribute("data-subid"),
                   mnt,
                 ])
-                  .then(() => customAlert("Success", "Set as default root."))
+                  .then(() => customAlert("Success", `Snapshot ID ${tgt.getAttribute("data-subid")} is now set as the default mount.`))
                   .catch((e) => customAlert("Error", e.message)),
             );
           } else if (op === "disable-cow" || op === "enable-cow") {
@@ -1071,9 +918,6 @@ fi
     $("view-master").classList.remove("hidden-element");
     $("detail-container").setAttribute("data-active-index", "");
   });
-  on("btn-close-subvol-modal", "click", () =>
-    $("manage-subvol-modal").classList.add("hidden-element"),
-  );
   on("btn-close-add-modal", "click", () =>
     $("add-dev-modal").classList.add("hidden-element"),
   );

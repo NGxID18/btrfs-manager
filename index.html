@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="../base1/cockpit.css" type="text/css" rel="stylesheet" />
-    <link href="style.css" type="text/css" rel="stylesheet" />
+    <link href="style.css?v=13" type="text/css" rel="stylesheet" />
 
     <script src="../base1/cockpit.js"></script>
-    <script src="src/helper.js?v=8"></script>
-    <script src="src/engine.js?v=8" defer></script>
-    <script src="src/router.js?v=8" defer></script>
+    <script src="src/helper.js?v=13"></script>
+    <script src="src/engine.js?v=13" defer></script>
+    <script src="src/router.js?v=13" defer></script>
   </head>
   <body>
     <div class="header-section">
@@ -104,74 +104,6 @@
           </button>
           <button class="btn btn-primary" id="btn-confirm-add-dev" disabled>
             Add Disk
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div id="manage-subvol-modal" class="modal-overlay hidden-element">
-      <div class="modal-content">
-        <h3>Manage Subvolume</h3>
-        <p class="mb-15">
-          Path: <strong id="modal-subvol-path"></strong> <br /><span
-            class="text-muted"
-            id="modal-subvol-id"
-          ></span>
-        </p>
-        <div class="modal-action-grid">
-          <button
-            class="btn btn-secondary btn-block btn-action"
-            data-action="subvol-ops"
-            data-op="restore"
-          >
-            Restore / Clone
-          </button>
-          <button
-            class="btn btn-secondary btn-block btn-action"
-            data-action="subvol-ops"
-            data-op="snap-subvol"
-          >
-            Create Snapshot
-          </button>
-          <button
-            class="btn btn-secondary btn-block btn-action"
-            data-action="subvol-ops"
-            data-op="quota"
-          >
-            Set Quota Limit
-          </button>
-          <button
-            class="btn btn-secondary btn-block btn-action"
-            data-action="subvol-ops"
-            data-op="default"
-          >
-            Set as Default Mount
-          </button>
-          <button
-            class="btn btn-secondary btn-block btn-action"
-            id="btn-toggle-cow"
-            data-action="subvol-ops"
-            data-op="disable-cow"
-          >
-            Disable CoW (No_COW)
-          </button>
-          <div id="modal-subvol-root-warning" class="warning-box mb-10 hidden-element" style="padding: 10px 14px;">
-            <p class="text-warning mb-0" style="font-size: 13px;">
-              <b>Protected System Root:</b> This subvolume is currently mounted as <code>/</code> (Active OS Root) and cannot be deleted.
-            </p>
-          </div>
-          <button
-            class="btn btn-danger btn-block btn-action"
-            id="btn-delete-subvol"
-            data-action="subvol-ops"
-            data-op="del"
-          >
-            Delete Permanently
-          </button>
-        </div>
-        <div class="modal-actions">
-          <button class="btn btn-secondary" id="btn-close-subvol-modal">
-            Close
           </button>
         </div>
       </div>
