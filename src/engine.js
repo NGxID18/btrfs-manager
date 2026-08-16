@@ -125,15 +125,100 @@ window.App = {
       : null;
     if (
       activeIdx !== null &&
+      activeIdx !== "" &&
       $("view-detail") &&
       !$("view-detail").classList.contains("hidden-element")
-    )
-      this.renderDetail(activeIdx);
+    ) {
+      const v = this.vols.find((vol) => vol.idx == activeIdx);
+      if (v) {
+        this.updateUI(v);
+      } else {
+        $("view-detail").classList.add("hidden-element");
+        $("view-master").classList.remove("hidden-element");
+        $("detail-container").setAttribute("data-active-index", "");
+      }
+    }
     this.fetchDynamicMetrics();
+  },
+
+  orphanedSnaps: [],
+  async checkOrphanedSnapshots() {
+    try {
+      const script = `
+if command -v snapper >/dev/null 2>&1; then
+    snapper list-configs 2>/dev/null | awk 'NR>2 {print $1 "|" $3}' | while IFS="|" read -r cfg subvol; do
+        [ -z "$cfg" ] && continue
+        [ "$cfg" = "Config" ] && continue
+        is_orphan=0
+        if [ -z "$subvol" ] || [ ! -d "$subvol" ]; then
+            is_orphan=1
+        elif ! btrfs subvolume show "$subvol" >/dev/null 2>&1; then
+            tgt=$(findmnt -n -o TARGET -T "$subvol" 2>/dev/null)
+            if [ "$tgt" != "$subvol" ] && [ "$subvol" != "/" ]; then
+                is_orphan=1
+            elif ! findmnt -n -t btrfs -T "$subvol" >/dev/null 2>&1; then
+                is_orphan=1
+            fi
+        fi
+        if [ "$is_orphan" -eq 1 ]; then
+            echo "$cfg|$subvol"
+        fi
+    done
+fi
+`;
+      const out = await cmd(["sh", "-c", script]);
+      this.orphanedSnaps = out
+        .trim()
+        .split("\n")
+        .filter((l) => l.trim().includes("|"))
+        .map((l) => {
+          const [cfg, subvol] = l.split("|");
+          return { cfg: cfg.trim(), subvol: (subvol || "").trim() };
+        });
+    } catch (e) {
+      this.orphanedSnaps = [];
+    }
+    this.renderOrphanBanner();
+  },
+
+  renderOrphanBanner() {
+    const el = $("orphan-snap-container");
+    if (!el) return;
+    if (!this.orphanedSnaps || this.orphanedSnaps.length === 0) {
+      el.classList.add("hidden-element");
+      el.innerHTML = "";
+      return;
+    }
+    const count = this.orphanedSnaps.length;
+    const itemsHtml = this.orphanedSnaps
+      .map(
+        (o) =>
+          `<li><strong>${o.cfg}</strong> (target mount: <span class="btrfs-code">${o.subvol || "Missing"}</span>)</li>`,
+      )
+      .join("");
+    el.innerHTML = `
+      <div class="orphan-snap-content">
+        <div class="orphan-snap-title">
+          <span>⚠️ Broken / Orphaned Snapshot Schedules Detected</span>
+          <span class="orphan-badge">${count} Stale ${count === 1 ? "Schedule" : "Schedules"}</span>
+        </div>
+        <div class="orphan-snap-desc">
+          The following Snapper snapshot schedules point to filesystems that were deleted or formatted outside BTRFS Manager. When the hourly snapshot timer runs, this causes snapshot errors that <strong>can prevent snapshotting other healthy volumes</strong> (like root or home):
+        </div>
+        <ul class="danger-list orphan-item-list">
+          ${itemsHtml}
+        </ul>
+      </div>
+      <div class="orphan-snap-actions">
+        <button class="btn btn-danger btn-sm btn-action" data-action="clean-orphaned-snaps">Clean Broken Schedules Now</button>
+      </div>
+    `;
+    el.classList.remove("hidden-element");
   },
 
   /* STREAMING_CHUNK:Fetching Live Metrics and Snapper Configuration... */
   async fetchDynamicMetrics() {
+    await this.checkOrphanedSnapshots();
     for (let v of this.vols) {
       if (!v.mountPoint) {
         v.raid = "Mount required";
@@ -229,6 +314,7 @@ echo "$STATUS"
 
   /* STREAMING_CHUNK:Rendering Dashboard Master View... */
   renderMaster() {
+    this.renderOrphanBanner();
     if (!$("disk-container")) return;
     $("disk-container").innerHTML = this.vols.length
       ? this.vols
@@ -262,6 +348,13 @@ echo "$STATUS"
       )
       .join("");
 
+    const isRoot =
+      v.mountPoint === "/" ||
+      v.label.toLowerCase().includes("root") ||
+      (this.mnt["/"] && v.devs.some((d) => this.mnt["/"] && d.path.includes(this.mnt["/"])));
+
+    const boxSafe = (v.mountPoint || "root").replace(/[^a-zA-Z0-9]/g, "-");
+
     $("detail-container").innerHTML = `
             <h2 class="animated-view mb-25">${v.label}</h2>
             <div class="detail-layout-grid">
@@ -283,16 +376,38 @@ echo "$STATUS"
                       v.mountPoint
                         ? `<div class="btrfs-card">
                         <h4 class="section-title">Advanced Maintenance & Optimization</h4>
-                        <div class="flex-wrap-gap">
-                            <button class="btn btn-primary btn-sm btn-action" data-action="scrub" data-mount="${v.mountPoint}">Scrub</button> 
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="scrub-status" data-mount="${v.mountPoint}">Check Scrub</button> 
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="balance" data-mount="${v.mountPoint}">Balance (50%)</button> 
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="defrag" data-mount="${v.mountPoint}">Defrag Only</button> 
+                        <div class="flex-wrap-gap mb-15">
+                            <button class="btn btn-primary btn-sm btn-action" id="btn-scrub-${boxSafe}" data-action="scrub" data-mount="${v.mountPoint}">Scrub</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" id="btn-balance-${boxSafe}" data-action="balance" data-mount="${v.mountPoint}">Balance</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" id="btn-defrag-${boxSafe}" data-action="defrag" data-mount="${v.mountPoint}">Defrag</button> 
                         </div>
-                        <div id="maint-console-${v.mountPoint.replace(/\//g, "-")}" class="status-console hidden-element"></div>
+                        <div class="terminal-window">
+                            <div class="terminal-header">
+                                <div class="terminal-controls">
+                                    <span class="term-dot term-dot-red"></span>
+                                    <span class="term-dot term-dot-yellow"></span>
+                                    <span class="term-dot term-dot-green"></span>
+                                </div>
+                                <div class="terminal-title">btrfs@console:${v.mountPoint}#</div>
+                                <div class="terminal-header-actions">
+                                    <span id="term-status-${boxSafe}" class="term-status-badge">Idle</span>
+                                    <button class="term-clear-btn btn-action" data-action="clear-terminal" data-box="${boxSafe}">Clear</button>
+                                </div>
+                            </div>
+                            <div id="maint-console-${boxSafe}" class="terminal-body"><span class="term-muted">Console ready. Click any maintenance button above to execute live tasks.</span></div>
+                        </div>
                     </div>`
                         : `<div class="warning-box"><p class="text-warning mb-5">Volume Locked</p><p class="text-muted">Please mount this volume via Cockpit's native Storage page to unlock subvolume and kernel maintenance tasks.</p></div>`
                     }
+                    <div class="btrfs-card danger-card">
+                        <h4 class="section-title">Danger Zone</h4>
+                        <p class="danger-desc">Permanently remove this volume. This action will unmount the filesystem, purge all associated Snapper & cron snapshot configurations, and wipe all disk signatures.</p>
+                        ${
+                          isRoot
+                            ? `<div class="warning-box"><p class="text-warning mb-0"><b>Protected System Volume:</b> This pool contains the operating system root filesystem (<code>/</code>) and cannot be destroyed.</p></div>`
+                            : `<button class="btn btn-danger btn-sm btn-action" data-action="destroy-vol-modal" data-mount="${v.mountPoint || ""}" data-uuid="${v.uuid}" data-label="${v.label}" data-devs="${v.devs.map((d) => d.path).join(" ")}" data-index="${v.idx}">Destroy Volume & Wipe Disks</button>`
+                        }
+                    </div>
                 </div>
                 <div class="detail-right-col animated-view">
                     <div class="btrfs-card h-100-col">
@@ -315,37 +430,70 @@ echo "$STATUS"
     if (v.mountPoint) this.fetchSubvols(v.mountPoint, v.idx);
   },
 
-  /* STREAMING_CHUNK:Fetching Live BTRFS Subvolumes via Subvolid 5... */
+  /* STREAMING_CHUNK:Fetching Live BTRFS Subvolumes across Fedora, Debian, Arch... */
   async fetchSubvols(mount, idx) {
     if (!$(`subvol-list-${idx}`)) return;
     try {
-      // FIX: Menggunakan '$TMP' pada perintah btrfs subvolume list
-      // agar BTRFS mengembalikan absolute path yang sempurna (contoh: @/var/lib/machines)
       const script = `
 mnt="$1"
-DEV=$(findmnt -n -o SOURCE -T "$mnt" | head -n 1 | cut -d'[' -f1)
-if [ -z "$DEV" ]; then DEV=$(df "$mnt" | awk 'NR==2 {print $1}'); fi
+# Robust device resolution for all distros (Arch, Debian/Ubuntu, Fedora/RHEL)
+DEV=$(findmnt -n -o SOURCE -T "$mnt" 2>/dev/null | sed 's/\\[.*\\]//' | head -n 1)
+if [ -z "$DEV" ]; then DEV=$(df "$mnt" 2>/dev/null | awk 'NR==2 {print $1}'); fi
+if echo "$DEV" | grep -q "^UUID="; then DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1); fi
+if echo "$DEV" | grep -q "^LABEL="; then DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1); fi
+
 TMP=$(mktemp -d)
+IS_MOUNTED=0
 
-mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null
+if [ -b "$DEV" ] || [ -n "$DEV" ]; then
+    if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
+        IS_MOUNTED=1
+    elif mount -t btrfs -o subvolid=5,context="system_u:object_r:tmp_t:s0" "$DEV" "$TMP" 2>/dev/null; then
+        IS_MOUNTED=1
+    fi
+fi
 
-btrfs subvolume list "$TMP" | while read -r line; do
+SCAN_DIR="$mnt"
+[ "$IS_MOUNTED" -eq 1 ] && SCAN_DIR="$TMP"
+
+btrfs subvolume list "$SCAN_DIR" 2>/dev/null | while read -r line; do
+    [ -z "$line" ] && continue
     id=$(echo "$line" | awk '{print $2}')
     sub_path=$(echo "$line" | sed -n 's/.*path \\(.*\\)/\\1/p')
+    [ -z "$id" ] && continue
     
-    ctime=$(btrfs subvolume show "$TMP/$sub_path" 2>/dev/null | grep -i "Creation time:" | sed -e 's/^[[:space:]]*Creation time:[[:space:]]*//' | cut -d' ' -f1,2)
-    if [ -z "$ctime" ] || [ "$ctime" = "-" ]; then ctime="Unknown Time"; fi
+    TARGET_DIR=""
+    if [ "$IS_MOUNTED" -eq 1 ] && [ -e "$TMP/$sub_path" ]; then
+        TARGET_DIR="$TMP/$sub_path"
+    elif [ -e "$mnt/$sub_path" ]; then
+        TARGET_DIR="$mnt/$sub_path"
+    elif [ -e "/$sub_path" ]; then
+        TARGET_DIR="/$sub_path"
+    else
+        FOUND_MNT=$(findmnt -n -o TARGET -t btrfs --source "*[$sub_path]" 2>/dev/null | head -n 1)
+        [ -n "$FOUND_MNT" ] && TARGET_DIR="$FOUND_MNT"
+    fi
     
-    attr=$(lsattr -d "$TMP/$sub_path" 2>/dev/null | awk '{print $1}')
+    ctime="Unknown Time"
+    if [ -n "$TARGET_DIR" ]; then
+        ctime=$(btrfs subvolume show "$TARGET_DIR" 2>/dev/null | grep -i "Creation time:" | sed -e 's/^[[:space:]]*Creation time:[[:space:]]*//' | cut -d' ' -f1,2)
+    fi
+    [ -z "$ctime" ] || [ "$ctime" = "-" ] && ctime="Active Subvolume"
+    
     nocow="false"
-    if echo "$attr" | grep -q "C"; then nocow="true"; fi
+    if [ -n "$TARGET_DIR" ]; then
+        attr=$(lsattr -d "$TARGET_DIR" 2>/dev/null | awk '{print $1}')
+        if echo "$attr" | grep -q "C"; then nocow="true"; fi
+    fi
 
     echo "$id|$sub_path|$nocow|$ctime"
 done
 
-umount "$TMP" 2>/dev/null
-rmdir "$TMP" 2>/dev/null
-            `;
+if [ "$IS_MOUNTED" -eq 1 ]; then
+    umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true
+fi
+rmdir "$TMP" 2>/dev/null || true
+`;
       const out = await cmd(["sh", "-c", script, "--", mount]);
       const html = out
         .trim()
@@ -359,6 +507,14 @@ rmdir "$TMP" 2>/dev/null
           const nocow = parts[2] === "true";
           const ctime = parts.slice(3).join("|");
 
+          const isRootSubvol =
+            (mount === "/" && (path === "@" || path === "" || path === "root" || path === "@root")) ||
+            path === "@";
+
+          const rootBadge = isRootSubvol
+            ? `<span style="color: #48bb78; border: 1px solid #48bb78; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(72, 187, 120, 0.15);">OS Root (/)</span>`
+            : "";
+
           const cowBadge = nocow
             ? `<span style="color: #d69e2e; border: 1px solid #d69e2e; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(214, 158, 46, 0.1);">CoW Disabled</span>`
             : "";
@@ -367,9 +523,9 @@ rmdir "$TMP" 2>/dev/null
                     <div class="subvol-info">
                         <span class="btrfs-code">/${path}</span>
                         <span class="text-primary mt-5" style="font-size: 13px; font-weight: 600;">Created: ${ctime}</span>
-                        <span class="text-muted" style="font-size: 12px; margin-top: 2px;">ID: ${id} ${cowBadge}</span>
+                        <span class="text-muted" style="font-size: 12px; margin-top: 2px;">ID: ${id} ${rootBadge} ${cowBadge}</span>
                     </div>
-                    <button class="btn btn-secondary btn-sm btn-action" data-action="manage-subvol" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}" data-nocow="${nocow}">Manage</button>
+                    <button class="btn btn-secondary btn-sm btn-action" data-action="manage-subvol" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}" data-nocow="${nocow}" data-is-root="${isRootSubvol}">Manage</button>
                 </div>`;
         })
         .join("");

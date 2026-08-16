@@ -10,6 +10,8 @@ By leveraging Cockpit's native `spawn` API, the extension communicates directly 
 ### Core Features
 * Master-Detail Dashboard: A responsive grid layout that provides a high-level overview of all BTRFS volumes, with dedicated detail pages for advanced management.
 * Volume & RAID Creation: Format empty block devices into new BTRFS volumes with support for Single, RAID 0, RAID 1, and RAID 10 profiles. The system includes strict safety checks to only display unallocated disks.
+* Volume Deletion & Teardown: Safely destroy non-root BTRFS pools with automated unmounting, full Snapper/Cron snapshot schedule purge, and disk magic signature wipe (`wipefs`).
+* Orphaned Snapshot Cleaner: Automatically detects broken or stale Snapper configs pointing to formatted/removed drives and provides 1-click cleanup to prevent systemwide snapshot failures.
 * Physical Device Management: View physical device topology, add new blank disks to expand capacity online, and safely remove (evacuate) disks from an active volume.
 * Subvolumes & Snapshots: Create and delete subvolumes for logical data isolation. Take instant root or subvolume snapshots, and restore/clone them with a single click.
 * Maintenance & Health: Run background scrubs to detect bit-rot, perform data balancing (with 50% usage filters), and trigger live filesystem defragmentation.

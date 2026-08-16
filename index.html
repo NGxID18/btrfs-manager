@@ -8,19 +8,20 @@
     <link href="style.css" type="text/css" rel="stylesheet" />
 
     <script src="../base1/cockpit.js"></script>
-    <script src="src/helper.js?v=4"></script>
-    <script src="src/engine.js?v=4" defer></script>
-    <script src="src/router.js?v=4" defer></script>
+    <script src="src/helper.js?v=8"></script>
+    <script src="src/engine.js?v=8" defer></script>
+    <script src="src/router.js?v=8" defer></script>
   </head>
   <body>
     <div class="header-section">
-      <h2>Native BTRFS Management</h2>
+      <h2>BTRFS Management</h2>
       <p class="subtitle">
         Manage volumes, RAID topologies, subvolumes, and snapshots.
       </p>
     </div>
 
     <div id="view-master">
+      <div id="orphan-snap-container" class="orphan-snap-box hidden-element animated-view"></div>
       <div id="disk-container" class="disk-grid"></div>
       <div class="divider"></div>
       <div class="action-buttons animated-view">
@@ -154,8 +155,14 @@
           >
             Disable CoW (No_COW)
           </button>
+          <div id="modal-subvol-root-warning" class="warning-box mb-10 hidden-element" style="padding: 10px 14px;">
+            <p class="text-warning mb-0" style="font-size: 13px;">
+              <b>Protected System Root:</b> This subvolume is currently mounted as <code>/</code> (Active OS Root) and cannot be deleted.
+            </p>
+          </div>
           <button
             class="btn btn-danger btn-block btn-action"
+            id="btn-delete-subvol"
             data-action="subvol-ops"
             data-op="del"
           >
@@ -165,6 +172,44 @@
         <div class="modal-actions">
           <button class="btn btn-secondary" id="btn-close-subvol-modal">
             Close
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="destroy-vol-modal" class="modal-overlay hidden-element">
+      <div class="modal-content modal-content-danger">
+        <h3 class="text-danger">Destroy BTRFS Volume</h3>
+        <p class="mb-10">
+          You are about to permanently destroy volume: <strong id="destroy-vol-name" class="text-primary"></strong>
+        </p>
+        <div class="warning-box mb-15 text-danger">
+          <strong>CRITICAL WARNING:</strong>
+          <ul class="danger-list">
+            <li>All files, subvolumes, and data will be <strong>permanently erased</strong>.</li>
+            <li>All associated Snapper timeline & Cron snapshot schedules will be <strong>automatically cleaned up</strong>.</li>
+            <li>Active mount points will be <strong>unmounted</strong>.</li>
+            <li>Filesystem signatures on target disks (<span id="destroy-vol-devs" class="btrfs-code"></span>) will be <strong>wiped</strong> (<span class="btrfs-code">wipefs</span>).</li>
+          </ul>
+        </div>
+        <div class="form-group mb-15">
+          <label for="destroy-vol-confirm-input" class="form-label-block">
+            Type <strong id="destroy-vol-expected-text" class="btrfs-code"></strong> to confirm deletion:
+          </label>
+          <input
+            type="text"
+            id="destroy-vol-confirm-input"
+            class="form-input w-100"
+            placeholder="Type confirmation here..."
+            autocomplete="off"
+          />
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="btn-cancel-destroy-vol">
+            Cancel
+          </button>
+          <button class="btn btn-danger" id="btn-execute-destroy-vol" disabled>
+            Permanently Destroy Volume
           </button>
         </div>
       </div>
