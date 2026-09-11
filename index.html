@@ -5,45 +5,41 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="../base1/cockpit.css" type="text/css" rel="stylesheet" />
-    <link href="style.css?v=13" type="text/css" rel="stylesheet" />
+    <link href="style.css?v=15" type="text/css" rel="stylesheet" />
 
     <script src="../base1/cockpit.js"></script>
-    <script src="src/helper.js?v=13"></script>
-    <script src="src/engine.js?v=13" defer></script>
-    <script src="src/router.js?v=13" defer></script>
+    <script src="src/helper.js?v=15"></script>
+    <script src="src/engine.js?v=15" defer></script>
+    <script src="src/router.js?v=15" defer></script>
   </head>
   <body>
-    <div class="header-section">
-      <h2>BTRFS Management</h2>
-      <p class="subtitle">
-        Manage volumes, RAID topologies, subvolumes, and snapshots.
-      </p>
-    </div>
-
     <div id="view-master">
-      <div id="orphan-snap-container" class="orphan-snap-box hidden-element animated-view"></div>
-      <div id="disk-container" class="disk-grid"></div>
-      <div class="divider"></div>
-      <div class="action-buttons animated-view">
-        <button class="btn btn-primary" id="btn-create-raid">
-          Create New RAID Volume
-        </button>
-        <button class="btn btn-secondary" id="btn-refresh">Refresh Data</button>
+      <div class="view-header">
+        <div class="view-header-title">
+          <h2>Storage Pools</h2>
+        </div>
+        <div class="view-header-actions">
+          <button class="btn btn-primary" id="btn-create-raid">Create Pool</button>
+          <button class="btn btn-secondary" id="btn-refresh">Refresh Data</button>
+        </div>
       </div>
+
+      <div id="orphan-snap-container" class="orphan-snap-box hidden-element"></div>
+      <div id="disk-container" class="disk-grid"></div>
 
       <div
         id="raid-form"
-        class="btrfs-card raid-form-card hidden-element animated-view"
+        class="btrfs-card raid-form-card hidden-element"
       >
-        <h3>Create New BTRFS Volume</h3>
+        <h3>Create New BTRFS Pool</h3>
         <div class="form-group">
-          <p class="form-label-block">1. Select Target Disks:</p>
+          <p class="form-label-block">1. Target Block Devices:</p>
           <div id="available-disks" class="available-disks-box">
             Scanning block devices...
           </div>
         </div>
         <div class="form-group">
-          <p class="form-label-block">2. Volume Configuration:</p>
+          <p class="form-label-block">2. Data Profile (RAID Level):</p>
           <label for="raid-profile" class="form-label">Data Profile:</label>
           <select id="raid-profile" class="form-input">
             <option value="single">Single (1 Disk)</option>
@@ -55,17 +51,17 @@
           </select>
         </div>
         <div class="form-group">
-          <label for="volume-label" class="form-label">Volume Label:</label>
+          <label for="volume-label" class="form-label">Pool Label:</label>
           <input
             type="text"
             id="volume-label"
             class="form-input"
-            placeholder="e.g., DataServer"
+            placeholder="e.g., DataPool"
           />
         </div>
         <div class="form-actions">
           <button class="btn btn-primary" id="btn-execute-format">
-            Format & Create Volume
+            Format & Create Pool
           </button>
           <button class="btn btn-secondary" id="btn-cancel-format">
             Cancel
@@ -76,10 +72,12 @@
     </div>
 
     <div id="view-detail" class="hidden-element">
-      <div class="mb-25">
-        <button class="btn btn-secondary btn-sm" id="btn-back-master">
-          Back to Dashboard
-        </button>
+      <div class="view-header mb-20">
+        <div class="view-header-title">
+          <button class="btn-breadcrumb" id="btn-back-master">
+            <span class="breadcrumb-arrow">←</span> Storage Pools
+          </button>
+        </div>
       </div>
       <div id="detail-container"></div>
     </div>

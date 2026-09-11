@@ -3,6 +3,7 @@ window.App = {
   vols: [],
   hw: {},
   mnt: {},
+  hasSnapper: false,
   async fetch() {
     if (
       $("view-master") &&
@@ -13,11 +14,13 @@ window.App = {
         "<p class='loading-text'>Scanning BTRFS & Hardware Topologies...</p>";
     }
     try {
-      const [btrfsOut, mntOut, lsblkOut] = await Promise.all([
+      const [btrfsOut, mntOut, lsblkOut, snapperCheck] = await Promise.all([
         cmd(["btrfs", "filesystem", "show"]),
         cmd(["findmnt", "-A", "-J", "-t", "btrfs"]).catch(() => "{}"),
         cmd(["lsblk", "-J", "-o", "PATH,MODEL,VENDOR,TYPE"]).catch(() => "{}"),
+        cmd(["sh", "-c", "command -v snapper >/dev/null 2>&1 && echo yes || echo no"]).catch(() => "no"),
       ]);
+      this.hasSnapper = (snapperCheck || "").trim() === "yes";
 
       this.mnt = {};
       const walk = (nodes) =>
@@ -66,33 +69,45 @@ window.App = {
         const uuid = mLabel ? mLabel[3] : "Unknown";
         const mPath = block.match(/path\s+(\/dev\/\S+)/i);
         const rootPath = mPath ? mPath[1] : "";
-        const mountPoint =
-          this.mnt[rootPath] ||
-          this.mnt[`UUID=${uuid}`] ||
-          this.mnt[rootPath + "1"] ||
-          this.mnt[rootPath + "2"] ||
-          "";
 
         let devs = [];
         const lines = block.split("\n");
         lines.forEach((line) => {
           if (
             line.match(/devid/i) &&
-            line.match(/size/i) &&
             line.match(/path/i)
           ) {
             const idMatch = line.match(/devid\s+(\d+)/i);
-            const sizeMatch = line.match(/size\s+([0-9.]+\s?[a-zA-Z]+)/i);
+            const sizeMatch = line.match(/size\s+([0-9.]+(?:[a-zA-Z]+)?)/i);
             const pathMatch = line.match(/path\s+(\S+)/i);
-            if (idMatch && sizeMatch && pathMatch) {
+            const isMissing = line.includes("MISSING");
+            if (idMatch && pathMatch) {
               devs.push({
                 id: idMatch[1],
-                size: sizeMatch[1],
+                size: sizeMatch ? sizeMatch[1] : "0",
                 path: pathMatch[1],
+                missing: isMissing,
               });
             }
           }
         });
+
+        let mountPoint = this.mnt[`UUID=${uuid}`] || "";
+        if (!mountPoint && rootPath) {
+          mountPoint =
+            this.mnt[rootPath] ||
+            this.mnt[rootPath + "1"] ||
+            this.mnt[rootPath + "2"] ||
+            "";
+        }
+        if (!mountPoint) {
+          for (let d of devs) {
+            if (this.mnt[d.path]) {
+              mountPoint = this.mnt[d.path];
+              break;
+            }
+          }
+        }
 
         const rawSize = formatSize(
           devs.reduce((sum, d) => sum + parseSize(d.size), 0),
@@ -116,6 +131,12 @@ window.App = {
           raid: "Loading...",
           usable: "Loading...",
           snapStatus: "Loading...",
+          dataAlloc: null,
+          metaAlloc: null,
+          mountOptsHtml: "",
+          healthHtml: "",
+          devErrors: {},
+          totalDevErrors: 0,
         };
       });
 
@@ -263,13 +284,80 @@ fi
 echo "$STATUS"
                 `;
 
-        const [dfOut, hOut, snapOut] = await Promise.all([
+        const [dfOut, btrfsDfOut, hOut, snapOut, optsOut, statsOut] = await Promise.all([
           cmd(["btrfs", "filesystem", "df", v.mountPoint]),
+          cmd(["btrfs", "filesystem", "df", "-b", v.mountPoint]).catch(() => ""),
           cmd(["df", "-B1", v.mountPoint]),
           cmd(["sh", "-c", snapScript, "--", v.mountPoint]).catch(
             () => "Not Configured",
           ),
+          cmd(["findmnt", "-n", "-o", "OPTIONS", "-T", v.mountPoint]).catch(() => ""),
+          cmd(["btrfs", "device", "stats", v.mountPoint]).catch(() => ""),
         ]);
+
+        // Parse mount options & features
+        if (optsOut) {
+          const rawOpts = optsOut.trim().split(",");
+          const importantOpts = [];
+          const compOpt = rawOpts.find((o) => o.startsWith("compress"));
+          if (compOpt) importantOpts.push(compOpt);
+          const cacheOpt = rawOpts.find((o) => o.startsWith("space_cache"));
+          if (cacheOpt) importantOpts.push(cacheOpt);
+          const discOpt = rawOpts.find((o) => o.startsWith("discard"));
+          if (discOpt) importantOpts.push(discOpt);
+          if (rawOpts.includes("ro")) importantOpts.push("read-only");
+          if (rawOpts.includes("ssd")) importantOpts.push("ssd");
+          if (rawOpts.includes("autodefrag")) importantOpts.push("autodefrag");
+
+          v.mountOptsHtml = importantOpts.length
+            ? importantOpts.map((o) => `<span class="mount-opt-tag">${o}</span>`).join(" ")
+            : '<span class="text-muted">Standard BTRFS options</span>';
+        } else {
+          v.mountOptsHtml = '<span class="text-muted">Default</span>';
+        }
+
+        // Parse btrfs device stats
+        let totalDevErrors = 0;
+        let devErrors = {};
+        if (statsOut) {
+          const statLines = statsOut.trim().split("\n");
+          statLines.forEach((line) => {
+            const m = line.match(/\[([^\]]+)\]\.(\w+)\s+(\d+)/);
+            if (m) {
+              const devPath = m[1];
+              const count = parseInt(m[3], 10) || 0;
+              devErrors[devPath] = (devErrors[devPath] || 0) + count;
+              totalDevErrors += count;
+            }
+          });
+        }
+        v.devErrors = devErrors;
+        v.totalDevErrors = totalDevErrors;
+        v.healthHtml =
+          totalDevErrors > 0
+            ? `<span class="text-danger fw-bold">⚠️ ${totalDevErrors} Hardware / IO Errors Detected!</span>`
+            : `<span class="text-success fw-bold">✓ Healthy (0 IO Errors)</span>`;
+
+        let dataAlloc = null;
+        let metaAlloc = null;
+        if (btrfsDfOut) {
+          const dMatch = btrfsDfOut.match(/Data,[^:]*:\s*total=(\d+),\s*used=(\d+)/i);
+          if (dMatch) {
+            const total = parseInt(dMatch[1], 10);
+            const used = parseInt(dMatch[2], 10);
+            const pct = total > 0 ? parseFloat(((used / total) * 100).toFixed(1)) : 0;
+            dataAlloc = { total, used, pct, totalFmt: formatSize(total), usedFmt: formatSize(used) };
+          }
+          const mMatch = btrfsDfOut.match(/Metadata,[^:]*:\s*total=(\d+),\s*used=(\d+)/i);
+          if (mMatch) {
+            const total = parseInt(mMatch[1], 10);
+            const used = parseInt(mMatch[2], 10);
+            const pct = total > 0 ? parseFloat(((used / total) * 100).toFixed(1)) : 0;
+            metaAlloc = { total, used, pct, totalFmt: formatSize(total), usedFmt: formatSize(used) };
+          }
+        }
+        v.dataAlloc = dataAlloc;
+        v.metaAlloc = metaAlloc;
 
         const dM = dfOut.match(/Data,\s*(.*?):/i),
           mM = dfOut.match(/Metadata,\s*(.*?):/i);
@@ -303,12 +391,32 @@ echo "$STATUS"
       $(`master-usable-${v.idx}`).innerHTML = v.usable;
       if ($(`master-snap-${v.idx}`))
         $(`master-snap-${v.idx}`).innerHTML = v.snapStatus;
+      if ($(`master-raid-${v.idx}`))
+        $(`master-raid-${v.idx}`).innerHTML = v.raid;
     }
     if ($(`raid-display-${v.idx}`)) {
       $(`raid-display-${v.idx}`).innerHTML = v.raid;
       $(`usable-display-${v.idx}`).innerHTML = v.usable;
       if ($(`snap-display-${v.idx}`))
         $(`snap-display-${v.idx}`).innerHTML = v.snapStatus;
+      if ($(`health-display-${v.idx}`))
+        $(`health-display-${v.idx}`).innerHTML = v.healthHtml;
+      if ($(`opts-display-${v.idx}`))
+        $(`opts-display-${v.idx}`).innerHTML = v.mountOptsHtml;
+    }
+    if (v.dataAlloc && $(`alloc-data-bar-${v.idx}`)) {
+      $(`alloc-data-bar-${v.idx}`).style.width = `${v.dataAlloc.pct}%`;
+      if ($(`alloc-data-text-${v.idx}`))
+        $(`alloc-data-text-${v.idx}`).innerText = `${v.dataAlloc.usedFmt} / ${v.dataAlloc.totalFmt} (${v.dataAlloc.pct}%)`;
+    }
+    if (v.metaAlloc && $(`alloc-meta-bar-${v.idx}`)) {
+      $(`alloc-meta-bar-${v.idx}`).style.width = `${v.metaAlloc.pct}%`;
+      if ($(`alloc-meta-text-${v.idx}`))
+        $(`alloc-meta-text-${v.idx}`).innerText = `${v.metaAlloc.usedFmt} / ${v.metaAlloc.totalFmt} (${v.metaAlloc.pct}%)`;
+      if ($(`meta-warning-badge-${v.idx}`)) {
+        $(`meta-warning-badge-${v.idx}`).classList.toggle("hidden-element", v.metaAlloc.pct < 80);
+      }
+      $(`alloc-meta-bar-${v.idx}`).classList.toggle("warn-fill", v.metaAlloc.pct >= 80);
     }
   },
 
@@ -318,21 +426,52 @@ echo "$STATUS"
     if (!$("disk-container")) return;
     $("disk-container").innerHTML = this.vols.length
       ? this.vols
-          .map(
-            (v) => `
-            <div class="btrfs-card hoverable animated-view h-100-col">
-                <h3>${v.label}</h3>
-                <p class="mb-5"><b>UUID:</b> <span class="btrfs-code">${v.uuid}</span></p>
-                <p class="mb-5"><b>Hardware:</b> <span class="text-muted">${v.hwList}</span></p>
-                <p class="mb-5"><b>Raw Capacity:</b> ${v.rawSize}</p>
-                <p class="mb-5"><b>Usable Space:</b> <span id="master-usable-${v.idx}">${v.usable}</span></p>
-                <p class="mb-5"><b>Auto-Snapshot:</b> <span id="master-snap-${v.idx}" class="text-primary fw-bold">${v.snapStatus}</span></p>
-                <p class="mb-15"><b>Mount Status:</b> ${v.mountPoint ? `<span class="text-success">${v.mountPoint}</span>` : `<span class="text-warning">Not Mounted</span> <span class="text-muted text-sm">(Mount via Storage menu)</span>`}</p>
-                <button class="btn btn-secondary w-100 mt-auto btn-action" data-action="open-detail" data-index="${v.idx}">Manage Volume</button>
-            </div>`,
-          )
+          .map((v) => {
+            const hasMissing = v.devs && v.devs.some((d) => d.missing);
+            const hasErrors = v.totalDevErrors > 0;
+            const alertBadge = hasMissing
+              ? '<span class="badge-danger">Degraded (Disk Missing)</span>'
+              : hasErrors
+                ? '<span class="badge-meta-warn">⚠️ IO Errors</span>'
+                : "";
+            return `
+            <div class="btrfs-card hoverable h-100-col">
+                <div class="card-header-clean">
+                    <div>
+                        <h3 class="card-title-text">${v.label}</h3>
+                        ${alertBadge ? `<div class="mt-5">${alertBadge}</div>` : ""}
+                    </div>
+                    <div class="card-status-tag">
+                        ${v.mountPoint ? `<span class="badge-mounted">${v.mountPoint}</span>` : `<span class="badge-ro">Not Mounted</span>`}
+                    </div>
+                </div>
+                <div class="spec-table mt-15 mb-20">
+                    <div class="spec-row">
+                        <span class="spec-label">UUID</span>
+                        <span class="btrfs-code text-truncate">${v.uuid}</span>
+                    </div>
+                    <div class="spec-row">
+                        <span class="spec-label">Hardware</span>
+                        <span class="spec-val text-muted">${v.hwList}</span>
+                    </div>
+                    <div class="spec-row">
+                        <span class="spec-label">Capacity</span>
+                        <span class="spec-val"><b>${v.rawSize}</b> (Usable: <span id="master-usable-${v.idx}">${v.usable}</span>)</span>
+                    </div>
+                    <div class="spec-row">
+                        <span class="spec-label">RAID Profile</span>
+                        <span class="spec-val" id="master-raid-${v.idx}">${v.raid}</span>
+                    </div>
+                    <div class="spec-row">
+                        <span class="spec-label">Auto-Snapshot</span>
+                        <span class="spec-val"><span id="master-snap-${v.idx}">${v.snapStatus}</span>${!this.hasSnapper && (v.snapStatus === "Not Configured" || v.snapStatus === "Loading...") ? ' <span class="badge-snapper-missing">No Snapper</span>' : ""}</span>
+                    </div>
+                </div>
+                <button class="btn btn-secondary w-100 mt-auto btn-action" data-action="open-detail" data-index="${v.idx}">Manage Storage Pool</button>
+            </div>`;
+          })
           .join("")
-      : "<p class='mt-15'>No active BTRFS storage pools detected.</p>";
+      : "<p class='mt-15 text-muted'>No active BTRFS storage pools detected.</p>";
   },
 
   /* STREAMING_CHUNK:Rendering Subvolume Details... */
@@ -341,45 +480,118 @@ echo "$STATUS"
     const v = this.vols.find((vol) => vol.idx == idx);
     if (!v) return;
     $("detail-container").setAttribute("data-active-index", idx);
-    const devHtml = v.devs
-      .map(
-        (d) =>
-          `<div class="topo-item"><span><span class="btrfs-code">${d.path}</span> <span class="text-muted">(ID: ${d.id} | Size: ${d.size})</span></span> ${v.mountPoint ? `<button class="btn btn-danger btn-sm btn-action" data-action="remove-dev" data-mount="${v.mountPoint}" data-devpath="${d.path}">Remove</button>` : ""}</div>`,
-      )
+
+    const devRows = v.devs
+      .map((d) => {
+        const errCount = (v.devErrors && v.devErrors[d.path]) || 0;
+        const errBadge =
+          errCount > 0
+            ? `<span class="badge-danger">⚠️ ${errCount} IO Errors</span>`
+            : `<span class="badge-healthy">Healthy</span>`;
+        const missingBadge = d.missing
+          ? `<span class="badge-danger">MISSING</span>`
+          : "";
+        const removeBtn = v.mountPoint
+          ? d.missing
+            ? `<button class="btn-tool btn-tool-danger btn-action" data-action="remove-missing-dev" data-mount="${v.mountPoint}">Remove Missing</button>`
+            : `<button class="btn-tool btn-tool-danger btn-action" data-action="remove-dev" data-mount="${v.mountPoint}" data-devpath="${d.path}">Remove</button>`
+          : "";
+        return `<tr>
+          <td><span class="btrfs-code ${d.missing ? "text-danger" : ""}">${d.path}</span></td>
+          <td class="text-muted text-sm">${d.id}</td>
+          <td class="text-sm fw-bold">${d.size}</td>
+          <td>${missingBadge || errBadge}</td>
+          <td class="text-right">${removeBtn}</td>
+        </tr>`;
+      })
       .join("");
 
     const isRoot =
       v.mountPoint === "/" ||
       v.label.toLowerCase().includes("root") ||
-      (this.mnt["/"] && v.devs.some((d) => this.mnt["/"] && d.path.includes(this.mnt["/"])));
+      (this.mnt["/"] &&
+        v.devs.some((d) => this.mnt["/"] && d.path.includes(this.mnt["/"])));
 
     const boxSafe = (v.mountPoint || "root").replace(/[^a-zA-Z0-9]/g, "-");
 
     $("detail-container").innerHTML = `
-            <h2 class="animated-view mb-25">${v.label}</h2>
+            <div class="pool-detail-header mb-20">
+                <div class="pool-title-group">
+                    <h2 class="pool-title">${v.label}</h2>
+                    <div class="tag-group mt-5">
+                        ${v.mountPoint ? `<span class="badge-mounted">Mounted: ${v.mountPoint}</span>` : `<span class="badge-ro">Not Mounted (Locked)</span>`}
+                        <span class="btrfs-code">${v.uuid}</span>
+                    </div>
+                </div>
+            </div>
             <div class="detail-layout-grid">
-                <div class="detail-left-col animated-view">
+                <div class="detail-left-col">
                     <div class="btrfs-card">
-                        <h4 class="section-title">System Information & Topology</h4>
-                        <p class="mb-8"><b>UUID:</b> <span class="btrfs-code">${v.uuid}</span></p>
-                        <p class="mb-8"><b>Hardware Infrastructure:</b> <span class="text-primary fw-bold">${v.hwList}</span></p>
-                        <p class="mb-8"><b>Raw Capacity:</b> ${v.rawSize} <span class="text-muted">(Physical Pool Combined)</span></p>
-                        <p class="mb-8"><b>Usable Space:</b> <span id="usable-display-${v.idx}" class="fw-bold">${v.usable}</span></p>
-                        <p class="mb-8"><b>Active Profile:</b> <span id="raid-display-${v.idx}">${v.raid}</span></p>
-                        <p class="mb-8"><b>Auto-Snapshot:</b> <span id="snap-display-${v.idx}" class="text-primary fw-bold">${v.snapStatus}</span></p>
-                        <p class="mb-25"><b>Mount Status:</b> ${v.mountPoint ? `<span class="text-success">${v.mountPoint}</span>` : `<span class="text-warning">Not Mounted (Locked)</span>`}</p>
-                        <p class="section-title mt-15">Physical Device Topology</p>
-                        <div>${devHtml}</div>
-                        ${v.mountPoint ? `<div class="advanced-topo-actions"><button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${v.mountPoint}">Add Disk</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-raid" data-mount="${v.mountPoint}">Convert RAID Profile</button> <button class="btn btn-secondary btn-sm btn-action" data-action="resize-vol" data-mount="${v.mountPoint}">Resize Volume</button></div>` : ""}
+                        <h4 class="section-title">Pool Information & Physical Devices</h4>
+                        <div class="spec-table mb-15">
+                            <div class="spec-row"><span class="spec-label">Hardware Profile</span><span class="spec-val text-primary fw-bold">${v.hwList}</span></div>
+                            <div class="spec-row"><span class="spec-label">Raw Capacity</span><span class="spec-val">${v.rawSize} <span class="text-muted">(Aggregated Storage)</span></span></div>
+                            <div class="spec-row"><span class="spec-label">Usable Filesystem</span><span id="usable-display-${v.idx}" class="spec-val fw-bold">${v.usable}</span></div>
+                            <div class="spec-row"><span class="spec-label">Data RAID Level</span><span id="raid-display-${v.idx}" class="spec-val">${v.raid}</span></div>
+                            <div class="spec-row"><span class="spec-label">Auto-Snapshot</span><span id="snap-display-${v.idx}" class="spec-val fw-bold">${v.snapStatus}</span></div>
+                            <div class="spec-row"><span class="spec-label">Hardware Health</span><span id="health-display-${v.idx}" class="spec-val">${v.healthHtml || '<span class="text-success fw-bold">✓ Healthy (0 IO Errors)</span>'}</span></div>
+                            <div class="spec-row"><span class="spec-label">Mount Features</span><span id="opts-display-${v.idx}" class="spec-val">${v.mountOptsHtml || '<span class="text-muted">Standard</span>'}</span></div>
+                        </div>
+                        ${
+                          v.mountPoint
+                            ? `<div class="alloc-bars-box mb-20">
+                            <div class="alloc-row mb-10">
+                                <div class="alloc-header">
+                                    <span class="alloc-label">Data Chunk Allocation</span>
+                                    <span id="alloc-data-text-${v.idx}" class="alloc-stat">${v.dataAlloc ? `${v.dataAlloc.usedFmt} / ${v.dataAlloc.totalFmt} (${v.dataAlloc.pct}%)` : "Calculating..."}</span>
+                                </div>
+                                <div class="alloc-progress-track">
+                                    <div id="alloc-data-bar-${v.idx}" class="alloc-progress-fill data-fill" style="width: ${v.dataAlloc ? v.dataAlloc.pct : 0}%;"></div>
+                                </div>
+                            </div>
+                            <div class="alloc-row">
+                                <div class="alloc-header">
+                                    <span>
+                                        <span class="alloc-label">Metadata Chunk Allocation</span>
+                                        <span id="meta-warning-badge-${v.idx}" class="badge-meta-warn ${v.metaAlloc && v.metaAlloc.pct >= 80 ? "" : "hidden-element"}">⚠️ High Meta Usage (>80%)</span>
+                                    </span>
+                                    <span id="alloc-meta-text-${v.idx}" class="alloc-stat">${v.metaAlloc ? `${v.metaAlloc.usedFmt} / ${v.metaAlloc.totalFmt} (${v.metaAlloc.pct}%)` : "Calculating..."}</span>
+                                </div>
+                                <div class="alloc-progress-track">
+                                    <div id="alloc-meta-bar-${v.idx}" class="alloc-progress-fill meta-fill ${v.metaAlloc && v.metaAlloc.pct >= 80 ? "warn-fill" : ""}" style="width: ${v.metaAlloc ? v.metaAlloc.pct : 0}%;"></div>
+                                </div>
+                            </div>
+                        </div>`
+                            : ""
+                        }
+                        <h5 class="sub-section-title mt-20 mb-10">Block Devices</h5>
+                        <div class="table-scroll-container mb-15">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Device Node</th>
+                                        <th>ID</th>
+                                        <th>Capacity</th>
+                                        <th>Health</th>
+                                        <th class="text-right">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${devRows}
+                                </tbody>
+                            </table>
+                        </div>
+                        ${v.mountPoint ? `<div class="advanced-topo-actions"><button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${v.mountPoint}">Add Device</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-raid" data-mount="${v.mountPoint}" data-index="${v.idx}">Convert RAID</button> <button class="btn btn-secondary btn-sm btn-action" data-action="resize-vol" data-mount="${v.mountPoint}">Resize Volume</button></div>` : ""}
                     </div>
                     ${
                       v.mountPoint
                         ? `<div class="btrfs-card">
-                        <h4 class="section-title">Advanced Maintenance & Optimization</h4>
-                        <div class="flex-wrap-gap mb-15">
+                        <h4 class="section-title">Maintenance & Optimization</h4>
+                        <div class="toolbar-actions mb-15">
                             <button class="btn btn-primary btn-sm btn-action" id="btn-scrub-${boxSafe}" data-action="scrub" data-mount="${v.mountPoint}">Scrub</button> 
                             <button class="btn btn-secondary btn-sm btn-action" id="btn-balance-${boxSafe}" data-action="balance" data-mount="${v.mountPoint}">Balance</button> 
                             <button class="btn btn-secondary btn-sm btn-action" id="btn-defrag-${boxSafe}" data-action="defrag" data-mount="${v.mountPoint}">Defrag</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="device-stats" data-mount="${v.mountPoint}">Health Check</button> 
                         </div>
                         <div class="terminal-window">
                             <div class="terminal-header">
@@ -394,47 +606,55 @@ echo "$STATUS"
                                     <button class="term-clear-btn btn-action" data-action="clear-terminal" data-box="${boxSafe}">Clear</button>
                                 </div>
                             </div>
-                            <div id="maint-console-${boxSafe}" class="terminal-body"><span class="term-muted">Console ready. Click any maintenance button above to execute live tasks.</span></div>
+                            <div id="maint-console-${boxSafe}" class="terminal-body"><span class="term-muted">Ready. Select maintenance action above.</span></div>
                         </div>
                     </div>`
                         : `<div class="warning-box"><p class="text-warning mb-5">Volume Locked</p><p class="text-muted">Please mount this volume via Cockpit's native Storage page to unlock subvolume and kernel maintenance tasks.</p></div>`
                     }
                     <div class="btrfs-card danger-card">
-                        <h4 class="section-title">Danger Zone</h4>
-                        <p class="danger-desc">Permanently remove this volume. This action will unmount the filesystem, purge all associated Snapper & cron snapshot configurations, and wipe all disk signatures.</p>
+                        <h4 class="section-title text-danger">Destroy Pool</h4>
+                        <p class="danger-desc">Permanently destroy this volume. Unmounts the filesystem, purges all Snapper & cron schedules, and wipes disk signatures with wipefs.</p>
                         ${
                           isRoot
-                            ? `<div class="warning-box"><p class="text-warning mb-0"><b>Protected System Volume:</b> This pool contains the operating system root filesystem (<code>/</code>) and cannot be destroyed.</p></div>`
+                            ? `<div class="warning-box"><p class="text-warning mb-0"><b>Protected System Volume:</b> Contains the operating system root (<code>/</code>) and cannot be destroyed.</p></div>`
                             : `<button class="btn btn-danger btn-sm btn-action" data-action="destroy-vol-modal" data-mount="${v.mountPoint || ""}" data-uuid="${v.uuid}" data-label="${v.label}" data-devs="${v.devs.map((d) => d.path).join(" ")}" data-index="${v.idx}">Destroy Volume & Wipe Disks</button>`
                         }
                     </div>
                 </div>
-                <div class="detail-right-col animated-view">
+                <div class="detail-right-col">
                     <!-- Kotak Atas: Subvolumes Management -->
                     <div class="btrfs-card mb-20">
-                        <h4 class="section-title">Subvolumes Management</h4>
+                        <div class="card-header-clean mb-15">
+                            <h4 class="section-title mb-0">Subvolumes</h4>
+                        </div>
                         ${
                           v.mountPoint
-                            ? `<div class="flex-wrap-gap mb-15">
+                            ? `<div class="create-bar mb-15">
                             <input type="text" id="new-subvol-${v.idx}" placeholder="New subvolume name..." class="form-input flex-grow">
                             <button class="btn btn-primary btn-sm btn-action" data-action="subvol-ops" data-op="create" data-mount="${v.mountPoint}" data-index="${v.idx}">Create Subvolume</button> 
                         </div>
-                        <div id="subvol-list-${v.idx}" class="subvol-list-full"><p class="p-15-muted">Loading subvolumes...</p></div>`
+                        <div id="subvol-list-${v.idx}" class="table-scroll-container"><p class="p-15-muted">Loading subvolumes...</p></div>`
                             : '<p class="text-warning">Mount pool filesystem to unlock subvolume operations.</p>'
                         }
                     </div>
 
                     <!-- Kotak Bawah: Snapshots & Rollback Management -->
                     <div class="btrfs-card">
-                        <h4 class="section-title">Snapshots & Rollback Management</h4>
+                        <div class="card-header-clean mb-15">
+                            <h4 class="section-title mb-0">Snapshots</h4>
+                            ${
+                              v.mountPoint
+                                ? `<div class="toolbar-actions">
+                                <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="snap-root" data-mount="${v.mountPoint}">Snapshot ${v.mountPoint === "/" ? "Root" : v.mountPoint}</button>
+                                <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="auto-snap" data-path="" data-mount="${v.mountPoint}">Auto-Snap (Snapper)</button>
+                                <button class="btn btn-danger btn-sm btn-action" data-action="subvol-ops" data-op="purge-snaps" data-mount="${v.mountPoint}">Purge Old</button>
+                            </div>`
+                                : ""
+                            }
+                        </div>
                         ${
                           v.mountPoint
-                            ? `<div class="flex-wrap-gap mb-15">
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="snap-root" data-mount="${v.mountPoint}">Snapshot (${v.mountPoint === "/" ? "Root" : v.mountPoint})</button>
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="auto-snap" data-path="" data-mount="${v.mountPoint}">Auto-Snap (Snapper)</button>
-                            <button class="btn btn-danger btn-sm btn-action" data-action="subvol-ops" data-op="purge-snaps" data-mount="${v.mountPoint}">Purge Old</button>
-                        </div>
-                        <div id="snapshot-list-${v.idx}" class="subvol-list-full"><p class="p-15-muted">Loading snapshots...</p></div>`
+                            ? `<div id="snapshot-list-${v.idx}" class="table-scroll-container"><p class="p-15-muted">Loading snapshots...</p></div>`
                             : '<p class="text-warning">Mount pool filesystem to unlock snapshot operations.</p>'
                         }
                     </div>
@@ -450,7 +670,7 @@ echo "$STATUS"
       const script = `
 mnt="$1"
 # Robust device resolution for all distros (Arch, Debian/Ubuntu, Fedora/RHEL)
-DEV=$(findmnt -n -o SOURCE -T "$mnt" 2>/dev/null | sed 's/\\[.*\\]//' | head -n 1)
+DEV=$(findmnt -n -o SOURCE -T "$mnt" 2>/dev/null | head -n 1 | sed 's/\\[.*\\]//')
 if [ -z "$DEV" ]; then DEV=$(df "$mnt" 2>/dev/null | awk 'NR==2 {print $1}'); fi
 if echo "$DEV" | grep -q "^UUID="; then DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1); fi
 if echo "$DEV" | grep -q "^LABEL="; then DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1); fi
@@ -469,6 +689,11 @@ fi
 SCAN_DIR="$mnt"
 [ "$IS_MOUNTED" -eq 1 ] && SCAN_DIR="$TMP"
 
+SNAP_IDS=$(btrfs subvolume list -s "$SCAN_DIR" 2>/dev/null | awk '{print $2}')
+RO_IDS=$(btrfs subvolume list -r "$SCAN_DIR" 2>/dev/null | awk '{print $2}')
+DEFAULT_ID=$(btrfs subvolume get-default "$SCAN_DIR" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="ID") print $(i+1)}' | head -n 1)
+ACTIVE_MOUNTS=$(findmnt -n -l -o TARGET,SOURCE -t btrfs 2>/dev/null | grep -v "^/tmp")
+
 btrfs subvolume list "$SCAN_DIR" 2>/dev/null | while read -r line; do
     [ -z "$line" ] && continue
     id=$(echo "$line" | awk '{print $2}')
@@ -483,7 +708,7 @@ btrfs subvolume list "$SCAN_DIR" 2>/dev/null | while read -r line; do
     elif [ -e "/$sub_path" ]; then
         TARGET_DIR="/$sub_path"
     else
-        FOUND_MNT=$(findmnt -n -o TARGET -t btrfs --source "*[$sub_path]" 2>/dev/null | head -n 1)
+        FOUND_MNT=$(echo "$ACTIVE_MOUNTS" | grep "\\[$sub_path\\]" | awk '{print $1}' | head -n 1)
         [ -n "$FOUND_MNT" ] && TARGET_DIR="$FOUND_MNT"
     fi
     
@@ -499,20 +724,31 @@ btrfs subvolume list "$SCAN_DIR" 2>/dev/null | while read -r line; do
         if echo "$attr" | grep -q "C"; then nocow="true"; fi
     fi
 
-    MOUNT_PT=$(findmnt -n -l -o TARGET,SOURCE -t btrfs 2>/dev/null | grep -v "^/tmp" | while read -r t_m s_m; do
-        s_in=$(echo "$s_m" | sed -n "s/.*\\[\\/*\\(.*\\)\\]/\\1/p")
-        if [ -n "$s_in" ] && [ "$s_in" = "$sub_path" ]; then
-            echo "$t_m"
-            break
-        fi
-    done)
+    MOUNT_PT=$(echo "$ACTIVE_MOUNTS" | awk -v sp="$sub_path" '$2 ~ "\\[/*" sp "\\]" {print $1; exit}')
     
     IN_FSTAB="false"
     if grep -qs -E "subvol=(/|@)?$sub_path\\b" /etc/fstab; then
         IN_FSTAB="true"
     fi
 
-    echo "$id|$sub_path|$nocow|$ctime|$MOUNT_PT|$IN_FSTAB"
+    IS_SNAP="false"
+    if echo " $SNAP_IDS " | grep -q " $id "; then
+        IS_SNAP="true"
+    elif echo "$sub_path" | grep -q -E "\\.snapshots|snapshot|_snap_|snap-"; then
+        IS_SNAP="true"
+    fi
+
+    IS_RO="false"
+    if echo " $RO_IDS " | grep -q " $id "; then
+        IS_RO="true"
+    fi
+
+    IS_DEF="false"
+    if [ -n "$DEFAULT_ID" ] && [ "$id" = "$DEFAULT_ID" ]; then
+        IS_DEF="true"
+    fi
+
+    echo "$id|$sub_path|$nocow|$ctime|$MOUNT_PT|$IN_FSTAB|$IS_SNAP|$IS_RO|$IS_DEF"
 done
 
 if [ "$IS_MOUNTED" -eq 1 ]; then
@@ -521,8 +757,8 @@ fi
 rmdir "$TMP" 2>/dev/null || true
 `;
       const out = await cmd(["sh", "-c", script, "--", mount]);
-      let subvolsHtml = "";
-      let snapshotsHtml = "";
+      let subvolsRows = "";
+      let snapshotsRows = "";
 
       out
         .trim()
@@ -537,75 +773,129 @@ rmdir "$TMP" 2>/dev/null || true
           const ctime = parts[3];
           const mountPt = parts[4] || "";
           const inFstab = parts[5] === "true";
+          const isSnapshot = parts[6] === "true";
+          const isRo = parts[7] === "true";
+          const isDef = parts[8] === "true";
 
           const isRootSubvol =
             mountPt === "/" ||
-            (mount === "/" && (path === "@" || path === "" || path === "root" || path === "@root")) ||
+            (mount === "/" &&
+              (path === "@" ||
+                path === "" ||
+                path === "root" ||
+                path === "@root")) ||
             path === "@";
 
           const isProtected = isRootSubvol || Boolean(mountPt) || inFstab;
 
-          const isSnapshot =
-            path.includes(".snapshots") ||
-            path.includes("snapshot") ||
-            path.includes("_snap_") ||
-            path.includes("snap-");
-
           if (isSnapshot) {
-            snapshotsHtml += `<div class="subvol-item animated-view">
-                <div class="subvol-info">
-                    <span class="btrfs-code">/${path}</span>
-                    <span class="text-primary mt-5" style="font-size: 13px; font-weight: 600;">Created: ${ctime}</span>
-                    <span class="text-muted" style="font-size: 12px; margin-top: 2px;">ID: ${id} <span style="color: #9f7aea; border: 1px solid #9f7aea; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(159, 122, 234, 0.15);">Snapshot</span></span>
-                </div>
-                <div class="flex-wrap-gap" style="align-items: center;">
-                    <button class="btn btn-primary btn-sm btn-action" data-action="subvol-ops" data-op="default" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Set as Default Mount</button>
-                    <button class="btn btn-danger btn-sm btn-action" data-action="subvol-ops" data-op="del" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Delete</button>
-                </div>
-            </div>`;
+            snapshotsRows += `<tr>
+                <td><span class="btrfs-code">/${path}</span></td>
+                <td class="text-muted text-sm">${ctime}</td>
+                <td class="text-muted text-sm">${id}</td>
+                <td>
+                    <div class="tag-group">
+                        ${isRo ? '<span class="badge-ro">Read-Only</span>' : '<span class="badge-rw">Read-Write</span>'}
+                        ${isDef ? '<span class="badge-default-mount">Default</span>' : ""}
+                    </div>
+                </td>
+                <td class="text-right">
+                    <div class="btn-group-sharp">
+                        <button class="btn-tool btn-action" title="Restore / Clone snapshot" data-action="subvol-ops" data-op="clone-snap" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Restore</button>
+                        <button class="btn-tool btn-action" title="${isRo ? "Make Writable" : "Make Read-Only"}" data-action="subvol-ops" data-op="toggle-ro" data-ro="${isRo ? "false" : "true"}" data-mount="${mount}" data-path="${path}" data-index="${idx}">
+                            ${isRo ? "Unlock" : "Lock"}
+                        </button>
+                        <button class="btn-tool btn-action" title="Set as default mount subvolume" data-action="subvol-ops" data-op="default" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Default</button>
+                        <button class="btn-tool btn-tool-danger btn-action" title="Delete snapshot" data-action="subvol-ops" data-op="del" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Delete</button>
+                    </div>
+                </td>
+            </tr>`;
           } else {
             let badgeHtml = "";
             if (isRootSubvol) {
-              badgeHtml = `<span style="color: #48bb78; border: 1px solid #48bb78; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(72, 187, 120, 0.15);">OS Root (/)</span>`;
+              badgeHtml += `<span class="badge-root">OS Root (/)</span>`;
             } else if (mountPt) {
-              badgeHtml = `<span style="color: #63b3ed; border: 1px solid #63b3ed; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(66, 153, 225, 0.15);">Mounted: ${mountPt}</span>`;
+              badgeHtml += `<span class="badge-mounted">${mountPt}</span>`;
             } else if (inFstab) {
-              badgeHtml = `<span style="color: #d69e2e; border: 1px solid #d69e2e; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(214, 158, 46, 0.15);">In /etc/fstab</span>`;
+              badgeHtml += `<span class="badge-fstab">In /etc/fstab</span>`;
+            }
+            if (isDef) {
+              badgeHtml += `<span class="badge-default-mount">Default</span>`;
+            }
+            if (isRo) {
+              badgeHtml += `<span class="badge-ro">RO</span>`;
             }
 
             const cowBadge = nocow
-              ? `<span style="color: #d69e2e; border: 1px solid #d69e2e; border-radius: 3px; padding: 0 4px; margin-left: 6px; font-weight: bold; font-size: 10px; background: rgba(214, 158, 46, 0.1);">CoW Disabled</span>`
+              ? `<span class="badge-nocow">NoCOW</span>`
               : "";
 
-            subvolsHtml += `<div class="subvol-item animated-view">
-                <div class="subvol-info">
-                    <span class="btrfs-code">/${path}</span>
-                    <span class="text-primary mt-5" style="font-size: 13px; font-weight: 600;">Created: ${ctime}</span>
-                    <span class="text-muted" style="font-size: 12px; margin-top: 2px;">ID: ${id} ${badgeHtml} ${cowBadge}</span>
-                </div>
-                <div class="flex-wrap-gap" style="align-items: center;">
-                    <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="${nocow ? 'enable-cow' : 'disable-cow'}" data-mount="${mount}" data-path="${path}" data-index="${idx}">
-                        ${nocow ? 'Enable CoW (+C)' : 'Disable CoW (No_COW)'}
-                    </button>
-                    ${
-                      !isProtected
-                        ? `<button class="btn btn-danger btn-sm btn-action" data-action="subvol-ops" data-op="del" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Delete</button>`
-                        : ""
-                    }
-                </div>
-            </div>`;
+            subvolsRows += `<tr>
+                <td><span class="btrfs-code">/${path}</span></td>
+                <td class="text-muted text-sm">${ctime}</td>
+                <td class="text-muted text-sm">${id}</td>
+                <td>
+                    <div class="tag-group">
+                        ${badgeHtml}
+                        ${cowBadge}
+                    </div>
+                </td>
+                <td class="text-right">
+                    <div class="btn-group-sharp">
+                        <button class="btn-tool btn-action" title="Create Snapshot" data-action="subvol-ops" data-op="snap-subvol" data-mount="${mount}" data-path="${path}" data-index="${idx}">Snap</button>
+                        <button class="btn-tool btn-action" title="Defrag subvolume" data-action="subvol-ops" data-op="defrag-subvol" data-mount="${mount}" data-path="${path}" data-index="${idx}">Defrag</button>
+                        <button class="btn-tool btn-action" title="${isRo ? "Make Writable" : "Make Read-Only"}" data-action="subvol-ops" data-op="toggle-ro" data-ro="${isRo ? "false" : "true"}" data-mount="${mount}" data-path="${path}" data-index="${idx}">
+                            ${isRo ? "Unlock" : "Lock"}
+                        </button>
+                        <button class="btn-tool btn-action" title="${nocow ? "Enable CoW (+C)" : "Disable CoW (No_COW)"}" data-action="subvol-ops" data-op="${nocow ? "enable-cow" : "disable-cow"}" data-mount="${mount}" data-path="${path}" data-index="${idx}">
+                            ${nocow ? "+CoW" : "NoCoW"}
+                        </button>
+                        ${
+                          !isProtected
+                            ? `<button class="btn-tool btn-tool-danger btn-action" title="Delete subvolume" data-action="subvol-ops" data-op="del" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Delete</button>`
+                            : ""
+                        }
+                    </div>
+                </td>
+            </tr>`;
           }
         });
 
       if ($(`subvol-list-${idx}`)) {
-        $(`subvol-list-${idx}`).innerHTML =
-          subvolsHtml ||
-          "<p class='p-15-muted'>No active user subvolumes found inside this pool root.</p>";
+        $(`subvol-list-${idx}`).innerHTML = subvolsRows
+          ? `<table class="data-table">
+              <thead>
+                <tr>
+                  <th>Subvolume</th>
+                  <th>Created</th>
+                  <th>ID</th>
+                  <th>Properties</th>
+                  <th class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${subvolsRows}
+              </tbody>
+            </table>`
+          : "<p class='p-15-muted'>No active user subvolumes found inside this pool root.</p>";
       }
       if ($(`snapshot-list-${idx}`)) {
-        $(`snapshot-list-${idx}`).innerHTML =
-          snapshotsHtml ||
-          "<p class='p-15-muted'>No snapshots created yet for this volume.</p>";
+        $(`snapshot-list-${idx}`).innerHTML = snapshotsRows
+          ? `<table class="data-table">
+              <thead>
+                <tr>
+                  <th>Snapshot</th>
+                  <th>Created</th>
+                  <th>ID</th>
+                  <th>Mode</th>
+                  <th class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${snapshotsRows}
+              </tbody>
+            </table>`
+          : "<p class='p-15-muted'>No snapshots created yet for this volume.</p>";
       }
     } catch (e) {
       if ($(`subvol-list-${idx}`)) {

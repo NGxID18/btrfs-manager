@@ -9,40 +9,44 @@ By leveraging Cockpit's native `spawn` API, the extension communicates directly 
 
 ### Core Features
 * Master-Detail Dashboard: A responsive grid layout that provides a high-level overview of all BTRFS volumes, with dedicated detail pages for advanced management.
-* Volume & RAID Creation: Format empty block devices into new BTRFS volumes with support for Single, RAID 0, RAID 1, and RAID 10 profiles. The system includes strict safety checks to only display unallocated disks.
-* Volume Deletion & Teardown: Safely destroy non-root BTRFS pools with automated unmounting, full Snapper/Cron snapshot schedule purge, and disk magic signature wipe (`wipefs`).
-* Orphaned Snapshot Cleaner: Automatically detects broken or stale Snapper configs pointing to formatted/removed drives and provides 1-click cleanup to prevent systemwide snapshot failures.
-* Physical Device Management: View physical device topology, add new blank disks to expand capacity online, and safely remove (evacuate) disks from an active volume.
-* Subvolumes & Snapshots: Create and delete subvolumes for logical data isolation. Take instant root or subvolume snapshots, and restore/clone them with a single click.
-* Maintenance & Health: Run background scrubs to detect bit-rot, perform data balancing (with 50% usage filters), and trigger live filesystem defragmentation.
+* Volume & RAID Creation: Format empty block devices into new BTRFS volumes with support for Single, DUP, RAID 0, RAID 1, and RAID 10 profiles, with strict safety checks for unallocated disks.
+* Volume Deletion & Teardown: Safely destroy non-root BTRFS pools with automated unmounting, full Snapper/Cron snapshot schedule purge, and disk signature wipe (`wipefs`).
+* Orphaned Snapshot Cleaner: Automatically detects broken or stale Snapper configs pointing to removed drives and provides 1-click cleanup to prevent systemwide snapshot failures.
+* Physical Device Management: View physical device topology, add new blank disks online, remove disks, and easily evacuate disconnected/failed drives with missing-device recovery.
+* Device Health & Diagnostics: Real-time monitoring of disk I/O and checksum corruption counters (`btrfs device stats`) to catch failing hardware before data loss occurs.
+* Subvolumes & Snapshots: Create and delete subvolumes with granular controls (CoW toggle, Read-Only locking, defragmentation). Take instant snapshots, restore/clone them to read-write subvolumes, or rollback the default mount.
+* Storage Breakdown & Features: Visual progress bars for Data and Metadata chunk allocation with usage warnings, alongside auto-detection of compression algorithms (`zstd`, `lzo`) and mount features.
+* Maintenance & Optimization: Non-blocking background scrub and balance with live terminal tracking, multi-volume concurrency, and targeted subvolume defragmentation.
 
 ## Dependencies
-To use this extension, ensure your Linux server has the following standard packages installed and running:
+Make sure the following packages are installed on your system:
 
-* `cockpit`: The core Cockpit web console environment.
-* `btrfs-progs`: The standard userspace utilities for BTRFS filesystem management.
-* `util-linux`: Required for the `lsblk` and `findmnt` commands, which the extension uses to safely scan block devices and map active mount points.
+* `cockpit`: The core Cockpit web console.
+* `btrfs-progs`: BTRFS filesystem management CLI tools.
+* `util-linux`: Provides `lsblk` and `findmnt` used for storage topology discovery.
+* `snapper` *(recommended)*: Required for automated timeline snapshots, retention limits, and cleanup schedules.
+  * **Fedora / RHEL**: `sudo dnf install snapper`
+  * **Arch Linux**: `sudo pacman -S snapper`
+  * **Debian / Ubuntu**: `sudo apt install snapper`
 
 ## Installation
-Because this is a vanilla frontend extension, no build process is required. You can install it simply by cloning the repository into your Cockpit extensions directory.
+Because this is a vanilla frontend extension, no build process is required. You can install it simply by cloning the repository into your Cockpit extensions directory:
 
-1. Open a terminal on your Linux server.
-2. Clone this repository into the user-specific Cockpit extensions folder:
-   ```bash
-   git clone https://github.com/NGxID18/btrfs-manager ~/.local/share/cockpit/btrfs-manager
-   ```
-   (Note: For a system-wide installation available to all users, clone it to /usr/share/cockpit/btrfs-manager instead. This requires root privileges).
-   ```bash
-   sudo git clone https://github.com/NGxID18/btrfs-manager /usr/share/cockpit/btrfs-manager
-   ```
-    
-4. Open your web browser, log in to your Cockpit interface, and refresh the page. The "BTRFS" menu will appear in the left navigation sidebar.
+### User-only (no root required)
+```bash
+git clone https://github.com/NGxID18/btrfs-manager ~/.local/share/cockpit/btrfs-manager
+```
 
-Usage
-Master View: Upon navigating to the BTRFS menu, you will see a grid of all detected BTRFS volumes on your system.
+### System-wide (all users)
+```bash
+sudo git clone https://github.com/NGxID18/btrfs-manager /usr/share/cockpit/btrfs-manager
+```
 
-Detail View: Click "Manage Volume" on any card to access its specific device topology, subvolume tree, and maintenance console.
+After cloning, log in to Cockpit (or refresh the page) and select **BTRFS** from the sidebar.
 
-Adding Devices: When clicking "Add Disk to Volume", the extension will automatically scan and present only completely unallocated and safe block devices to prevent accidental data loss.
-
-Restoring Snapshots: To restore a snapshot, click "Restore / Clone" next to the target snapshot. The system will prompt you for a new subvolume name to safely clone the snapshot without overwriting active data directories.
+## Usage Notes
+* **Master View**: Provides a dashboard grid of all detected BTRFS pools, showing raw size, usable space, active RAID profiles, and snapshot schedules.
+* **Detail View**: Click "Manage Volume" on any volume card to access device topology, subvolume tree, snapshot history, and maintenance controls.
+* **Device Selection**: Only unallocated disks without existing filesystems or active mount points are shown when creating volumes or adding disks.
+* **System Root Protection**: The operating system root pool (`/`) cannot be destroyed or wiped from the UI.
+* **Rollbacks**: To rollback to a snapshot, click **Set as Default Mount** on the target snapshot subvolume.

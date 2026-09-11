@@ -29,8 +29,110 @@ const getEmptyDevices = () => {
   );
 };
 
-let activeScrubTimer = null;
-let activeBalanceTimer = null;
+const activeScrubTimers = {};
+const activeBalanceTimers = {};
+
+const startScrubMonitor = (mnt) => {
+  const boxSafe = (mnt || "root").replace(/[^a-zA-Z0-9]/g, "-");
+  const scrubBtn = $(`btn-scrub-${boxSafe}`);
+  if (activeScrubTimers[mnt]) clearInterval(activeScrubTimers[mnt]);
+  activeScrubTimers[mnt] = setInterval(() => {
+    cmd(["btrfs", "scrub", "status", "-d", mnt])
+      .then((out) => {
+        const isFinished =
+          out.includes("finished") ||
+          out.includes("aborted") ||
+          out.includes("canceled");
+        termLog(mnt, `[Scrub Status]\n${out}`);
+        if (isFinished) {
+          clearInterval(activeScrubTimers[mnt]);
+          delete activeScrubTimers[mnt];
+          if (scrubBtn) {
+            scrubBtn.innerText = "Scrub";
+            scrubBtn.classList.remove("btn-danger");
+            scrubBtn.classList.add("btn-primary");
+            scrubBtn.removeAttribute("data-running");
+          }
+          setTermStatus(mnt, "Finished", false);
+          termLog(mnt, `> Scrub operation complete!`, "success");
+        }
+      })
+      .catch(() => {});
+  }, 2500);
+};
+
+const startBalanceMonitor = (mnt) => {
+  const boxSafe = (mnt || "root").replace(/[^a-zA-Z0-9]/g, "-");
+  const balBtn = $(`btn-balance-${boxSafe}`);
+  if (activeBalanceTimers[mnt]) clearInterval(activeBalanceTimers[mnt]);
+  activeBalanceTimers[mnt] = setInterval(() => {
+    cmd(["btrfs", "balance", "status", mnt])
+      .then((out) => {
+        termLog(mnt, `[Balance Status]\n${out}`);
+        const isFinished =
+          out.includes("No balance found") ||
+          out.includes("finished") ||
+          out.includes("Done") ||
+          out.includes("aborted");
+        if (isFinished) {
+          clearInterval(activeBalanceTimers[mnt]);
+          delete activeBalanceTimers[mnt];
+          if (balBtn) {
+            balBtn.innerText = "Balance";
+            balBtn.classList.remove("btn-danger");
+            balBtn.classList.add("btn-secondary");
+            balBtn.removeAttribute("data-running");
+          }
+          setTermStatus(mnt, "Complete", false);
+          termLog(mnt, `> Balance operation complete!`, "success");
+          App.fetch();
+        }
+      })
+      .catch(() => {});
+  }, 2500);
+};
+
+const checkBackgroundTasks = (mnt) => {
+  if (!mnt) return;
+  const boxSafe = (mnt || "root").replace(/[^a-zA-Z0-9]/g, "-");
+  const scrubBtn = $(`btn-scrub-${boxSafe}`);
+  const balBtn = $(`btn-balance-${boxSafe}`);
+
+  cmd(["btrfs", "scrub", "status", mnt])
+    .then((out) => {
+      if (out.includes("running")) {
+        if (scrubBtn) {
+          scrubBtn.innerText = "Cancel Scrub";
+          scrubBtn.classList.remove("btn-primary");
+          scrubBtn.classList.add("btn-danger");
+          scrubBtn.setAttribute("data-running", "true");
+        }
+        setTermStatus(mnt, "Scrubbing...", true);
+        startScrubMonitor(mnt);
+      }
+    })
+    .catch(() => {});
+
+  cmd(["btrfs", "balance", "status", mnt])
+    .then((out) => {
+      if (
+        !out.includes("No balance found") &&
+        !out.includes("finished") &&
+        !out.includes("aborted") &&
+        !out.includes("Done")
+      ) {
+        if (balBtn) {
+          balBtn.innerText = "Cancel Balance";
+          balBtn.classList.remove("btn-secondary");
+          balBtn.classList.add("btn-danger");
+          balBtn.setAttribute("data-running", "true");
+        }
+        setTermStatus(mnt, "Balancing...", true);
+        startBalanceMonitor(mnt);
+      }
+    })
+    .catch(() => {});
+};
 
 const termLog = (mnt, text, type = "") => {
   const boxSafe = (mnt || "root").replace(/[^a-zA-Z0-9]/g, "-");
@@ -83,41 +185,82 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       switch (action) {
-        case "open-detail":
+        case "open-detail": {
           $("view-master").classList.add("hidden-element");
           $("view-detail").classList.remove("hidden-element");
-          App.renderDetail(tgt.getAttribute("data-index"));
+          const idx = tgt.getAttribute("data-index");
+          App.renderDetail(idx);
+          const v = App.vols.find((vol) => vol.idx == idx);
+          if (v && v.mountPoint) {
+            checkBackgroundTasks(v.mountPoint);
+          }
           break;
+        }
 
-        case "convert-raid":
+        case "convert-raid": {
+          const vIdx = tgt.getAttribute("data-index");
+          const v = App.vols.find((vol) => vol.idx == vIdx);
+          const devCount = v && v.devs ? v.devs.length : 1;
           customSelect(
             "Online RAID Conversion",
-            "Select new profile:",
+            `Select new profile (Current pool has ${devCount} disk${devCount > 1 ? "s" : ""}):`,
             [
-              { v: "single", l: "Single" },
-              { v: "raid0", l: "RAID 0" },
-              { v: "raid1", l: "RAID 1" },
-              { v: "raid10", l: "RAID 10" },
+              { v: "single", l: "Single (Min 1 Disk)" },
+              { v: "dup", l: "DUP - Duplicate Chunks (Min 1 Disk)" },
+              { v: "raid0", l: "RAID 0 - Striping (Min 2 Disks)" },
+              { v: "raid1", l: "RAID 1 - Mirroring (Min 2 Disks)" },
+              { v: "raid10", l: "RAID 10 - Stripe + Mirror (Min 4 Disks)" },
             ],
             "Convert",
             (p) => {
-              if (p) {
-                termLog(mnt, `btrfs balance start -f -dconvert=${p} -mconvert=${p} ${mnt}`, "cmd");
-                setTermStatus(mnt, "Converting...", true);
-                cmd(["btrfs", "balance", "start", "-f", "-dconvert=" + p, "-mconvert=" + p, mnt])
-                  .then((o) => {
-                    termLog(mnt, `Conversion to ${p} executed successfully!\n${o}`, "success");
-                    setTermStatus(mnt, "Idle", false);
-                    App.fetch();
-                  })
-                  .catch((err) => {
-                    termLog(mnt, `Conversion failed: ${err.message}`, "err");
-                    setTermStatus(mnt, "Error", false);
-                  });
+              if (!p) return;
+              if ((p === "raid0" || p === "raid1") && devCount < 2) {
+                customAlert(
+                  "Insufficient Disks",
+                  `The ${p.toUpperCase()} profile requires at least 2 physical disks in the volume (currently ${devCount}). Please add more disks first using 'Add Disk'.`,
+                );
+                return;
               }
+              if (p === "raid10" && devCount < 4) {
+                customAlert(
+                  "Insufficient Disks",
+                  `The RAID 10 profile requires at least 4 physical disks in the volume (currently ${devCount}). Please add more disks first using 'Add Disk'.`,
+                );
+                return;
+              }
+
+              termLog(
+                mnt,
+                `btrfs balance start --background -f -dconvert=${p} -mconvert=${p} ${mnt}`,
+                "cmd",
+              );
+              setTermStatus(mnt, "Converting...", true);
+              cmd([
+                "btrfs",
+                "balance",
+                "start",
+                "--background",
+                "-f",
+                "-dconvert=" + p,
+                "-mconvert=" + p,
+                mnt,
+              ])
+                .then((o) => {
+                  termLog(
+                    mnt,
+                    `Conversion to ${p} initiated in background.\n${o}`,
+                    "status",
+                  );
+                  startBalanceMonitor(mnt);
+                })
+                .catch((err) => {
+                  termLog(mnt, `Conversion failed: ${err.message}`, "err");
+                  setTermStatus(mnt, "Error", false);
+                });
             },
           );
           break;
+        }
 
         case "resize-vol":
           customPrompt(
@@ -125,7 +268,8 @@ document.addEventListener("DOMContentLoaded", () => {
             "Target size (e.g. 'max', '+10G'):",
             "max",
             "Resize",
-            (sz) => {
+            (rawSz) => {
+              const sz = (rawSz || "").trim().replace(/[^0-9a-zA-Z+%-]/g, "");
               if (sz) {
                 termLog(mnt, `btrfs filesystem resize ${sz} ${mnt}`, "cmd");
                 cmd(["btrfs", "filesystem", "resize", sz, mnt])
@@ -154,8 +298,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 cmd(["btrfs", "scrub", "cancel", mnt])
                   .then((o) => {
                     termLog(mnt, `Scrub canceled: ${o}`, "warn");
-                    if (activeScrubTimer) clearInterval(activeScrubTimer);
-                    activeScrubTimer = null;
+                    if (activeScrubTimers[mnt]) {
+                      clearInterval(activeScrubTimers[mnt]);
+                      delete activeScrubTimers[mnt];
+                    }
                     if (scrubBtn) {
                       scrubBtn.innerText = "Scrub";
                       scrubBtn.classList.remove("btn-danger");
@@ -165,7 +311,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     setTermStatus(mnt, "Canceled", false);
                   })
                   .catch((err) => termLog(mnt, `Error canceling scrub: ${err.message}`, "err"));
-              }
+              },
+              true,
             );
             return;
           }
@@ -187,27 +334,7 @@ document.addEventListener("DOMContentLoaded", () => {
               cmd(["btrfs", "scrub", "start", mnt])
                 .then(() => {
                   termLog(mnt, `> Scrub process initiated. Monitoring live progress...`, "status");
-                  if (activeScrubTimer) clearInterval(activeScrubTimer);
-                  activeScrubTimer = setInterval(() => {
-                    cmd(["btrfs", "scrub", "status", "-d", mnt])
-                      .then((out) => {
-                        const isFinished = out.includes("finished") || out.includes("aborted") || out.includes("canceled");
-                        termLog(mnt, `[Scrub Status]\n${out}`);
-                        if (isFinished) {
-                          clearInterval(activeScrubTimer);
-                          activeScrubTimer = null;
-                          if (scrubBtn) {
-                            scrubBtn.innerText = "Scrub";
-                            scrubBtn.classList.remove("btn-danger");
-                            scrubBtn.classList.add("btn-primary");
-                            scrubBtn.removeAttribute("data-running");
-                          }
-                          setTermStatus(mnt, "Finished", false);
-                          termLog(mnt, `> Scrub operation complete!`, "success");
-                        }
-                      })
-                      .catch(() => {});
-                  }, 2000);
+                  startScrubMonitor(mnt);
                 })
                 .catch((err) => {
                   termLog(mnt, `Scrub start failed: ${err.message}`, "err");
@@ -219,7 +346,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     scrubBtn.removeAttribute("data-running");
                   }
                 });
-            }
+            },
           );
           break;
         }
@@ -247,8 +374,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 cmd(["btrfs", "balance", "cancel", mnt])
                   .then((o) => {
                     termLog(mnt, `Balance canceled: ${o}`, "warn");
-                    if (activeBalanceTimer) clearInterval(activeBalanceTimer);
-                    activeBalanceTimer = null;
+                    if (activeBalanceTimers[mnt]) {
+                      clearInterval(activeBalanceTimers[mnt]);
+                      delete activeBalanceTimers[mnt];
+                    }
                     if (balBtn) {
                       balBtn.innerText = "Balance";
                       balBtn.classList.remove("btn-danger");
@@ -258,17 +387,18 @@ document.addEventListener("DOMContentLoaded", () => {
                     setTermStatus(mnt, "Canceled", false);
                   })
                   .catch((err) => termLog(mnt, `Error canceling balance: ${err.message}`, "err"));
-              }
+              },
+              true,
             );
             return;
           }
 
           customConfirm(
             "Start Balance",
-            `Rebalance data & metadata chunks on ${mnt}?`,
+            `Rebalance data & metadata chunks on ${mnt} (filters: -dusage=50 -musage=50)?`,
             "Start Balance",
             () => {
-              termLog(mnt, `btrfs balance start -dusage=50 -musage=50 ${mnt}`, "cmd");
+              termLog(mnt, `btrfs balance start --background -dusage=50 -musage=50 ${mnt}`, "cmd");
               setTermStatus(mnt, "Balancing...", true);
               if (balBtn) {
                 balBtn.innerText = "Cancel Balance";
@@ -277,17 +407,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 balBtn.setAttribute("data-running", "true");
               }
 
-              cmd(["btrfs", "balance", "start", "-dusage=50", "-musage=50", mnt])
+              cmd(["btrfs", "balance", "start", "--background", "-dusage=50", "-musage=50", mnt])
                 .then((out) => {
-                  termLog(mnt, out || "Balance finished successfully.", "success");
-                  setTermStatus(mnt, "Complete", false);
-                  if (balBtn) {
-                    balBtn.innerText = "Balance";
-                    balBtn.classList.remove("btn-danger");
-                    balBtn.classList.add("btn-secondary");
-                    balBtn.removeAttribute("data-running");
-                  }
-                  App.fetch();
+                  termLog(mnt, out || "Balance initiated in background. Monitoring progress...", "status");
+                  startBalanceMonitor(mnt);
                 })
                 .catch((err) => {
                   termLog(mnt, `Balance failed: ${err.message}`, "err");
@@ -299,7 +422,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     balBtn.removeAttribute("data-running");
                   }
                 });
-            }
+            },
           );
           break;
         }
@@ -345,6 +468,16 @@ fi
           break;
         }
 
+        case "device-stats": {
+          termLog(mnt, `btrfs device stats -T ${mnt}`, "cmd");
+          cmd(["btrfs", "device", "stats", "-T", mnt])
+            .then((out) => {
+              termLog(mnt, `[Device Health & I/O Stats]\n${out}`, "status");
+            })
+            .catch((err) => termLog(mnt, `Stats error: ${err.message}`, "err"));
+          break;
+        }
+
         case "clear-terminal": {
           const boxSafe = tgt.getAttribute("data-box");
           const b = $(`maint-console-${boxSafe}`);
@@ -352,11 +485,35 @@ fi
           break;
         }
 
+        case "remove-missing-dev": {
+          customConfirm(
+            "Remove Missing Device",
+            `Evacuate and permanently remove the missing / disconnected block device from ${mnt}?\n\nCommand: btrfs device remove missing ${mnt}`,
+            "Remove Missing Device",
+            () => {
+              termLog(mnt, `btrfs device remove missing ${mnt}`, "cmd");
+              setTermStatus(mnt, "Removing...", true);
+              cmd(["btrfs", "device", "remove", "missing", mnt])
+                .then((o) => {
+                  termLog(mnt, `Missing device removed successfully:\n${o}`, "success");
+                  setTermStatus(mnt, "Idle", false);
+                  App.fetch();
+                })
+                .catch((err) => {
+                  termLog(mnt, `Device removal error: ${err.message}`, "err");
+                  setTermStatus(mnt, "Error", false);
+                });
+            },
+            true,
+          );
+          break;
+        }
+
         case "remove-dev":
           customConfirm(
             "Remove Device",
             `Evacuate and remove ${tgt.getAttribute("data-devpath")}?`,
-            "Remove",
+            "Remove Device",
             () => {
               termLog(mnt, `btrfs device remove ${tgt.getAttribute("data-devpath")} ${mnt}`, "cmd");
               cmd(["btrfs", "device", "remove", tgt.getAttribute("data-devpath"), mnt])
@@ -366,6 +523,7 @@ fi
                 })
                 .catch((err) => termLog(mnt, `Device removal error: ${err.message}`, "err"));
             },
+            true,
           );
           break;
 
@@ -492,6 +650,28 @@ echo "Cleaned"
             p ? `${p.split("/").pop()}_snap_${dt}` : `${vClean}_snap_${dt}`;
 
           if (op === "auto-snap") {
+            if (!App.hasSnapper) {
+              const script = `
+if command -v dnf >/dev/null 2>&1; then echo "sudo dnf install snapper"
+elif command -v pacman >/dev/null 2>&1; then echo "sudo pacman -S snapper"
+elif command -v apt-get >/dev/null 2>&1; then echo "sudo apt install snapper"
+else echo "Please install 'snapper' using your system package manager."
+fi`;
+              cmd(["sh", "-c", script])
+                .then((cmdText) => {
+                  customAlert(
+                    "Snapper Required",
+                    `The automated snapshot timeline feature requires the 'snapper' package.\n\nInstall it on this server by running:\n${cmdText.trim()}\n\nAfter installation, reload Cockpit to configure schedules.`,
+                  );
+                })
+                .catch(() => {
+                  customAlert(
+                    "Snapper Required",
+                    "The automated snapshot timeline feature requires 'snapper'. Please install it on your server (e.g. 'sudo dnf install snapper' or 'sudo pacman -S snapper').",
+                  );
+                });
+              return;
+            }
             const targetName = p ? `/${p}` : (mnt === "/" ? "Root Volume" : mnt);
             customSelect(
               "Snapper Integration",
@@ -606,9 +786,10 @@ printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRet
               },
             );
           } else if (op === "create") {
-            const nm = $(`new-subvol-${i}`)?.value.trim();
+            const rawNm = $(`new-subvol-${i}`)?.value.trim();
+            const nm = rawNm ? rawNm.replace(/[^a-zA-Z0-9._-]/g, "") : "";
             if (!nm) {
-              customAlert("Error", "Name required!");
+              customAlert("Error", "Valid subvolume name required (letters, numbers, dashes, underscores).");
               return;
             }
             cmd([
@@ -665,7 +846,7 @@ if grep -qs -E "subvol=(/|@)?$SUB_PATH\\b" /etc/fstab; then
     exit 1
 fi
 
-DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | sed 's/\\[.*\\]//' | head -n 1)
+DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | head -n 1 | sed 's/\\[.*\\]//')
 [ -z "$DEV" ] && DEV=$(df "$MNT" 2>/dev/null | awk 'NR==2 {print $1}')
 echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
 echo "$DEV" | grep -q "^LABEL=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
@@ -675,23 +856,22 @@ IS_MOUNTED=0
 if [ -b "$DEV" ] || [ -n "$DEV" ]; then
     if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
         IS_MOUNTED=1
-    elif mount -t btrfs -o subvolid=5,context="system_u:object_r:tmp_t:s0" "$DEV" "$TMP" 2>/dev/null; then
-        IS_MOUNTED=1
     fi
 fi
 
 DELETED=0
+LAST_ERR=""
 if [ "$IS_MOUNTED" -eq 1 ] && [ -e "$TMP/$SUB_PATH" ]; then
-    btrfs subvolume delete "$TMP/$SUB_PATH" 2>/dev/null && DELETED=1
+    ERR=$(btrfs subvolume delete "$TMP/$SUB_PATH" 2>&1) && DELETED=1 || LAST_ERR="$ERR"
 fi
 
 if [ "$DELETED" -eq 0 ]; then
     if [ -e "$MNT/$SUB_PATH" ]; then
-        btrfs subvolume delete "$MNT/$SUB_PATH" 2>/dev/null && DELETED=1
+        ERR=$(btrfs subvolume delete "$MNT/$SUB_PATH" 2>&1) && DELETED=1 || LAST_ERR="$ERR"
     elif [ -e "/$SUB_PATH" ]; then
-        btrfs subvolume delete "/$SUB_PATH" 2>/dev/null && DELETED=1
+        ERR=$(btrfs subvolume delete "/$SUB_PATH" 2>&1) && DELETED=1 || LAST_ERR="$ERR"
     elif [ -n "$SUB_ID" ]; then
-        btrfs subvolume delete -i "$SUB_ID" "$MNT" 2>/dev/null && DELETED=1
+        ERR=$(btrfs subvolume delete -i "$SUB_ID" "$MNT" 2>&1) && DELETED=1 || LAST_ERR="$ERR"
     fi
 fi
 
@@ -704,7 +884,7 @@ if [ "$DELETED" -eq 1 ]; then
     echo "Deleted"
     exit 0
 else
-    echo "Failed to delete subvolume '$SUB_PATH'."
+    echo "Failed to delete subvolume '$SUB_PATH': \${LAST_ERR:-Unknown error}"
     exit 1
 fi
 `;
@@ -712,30 +892,106 @@ fi
                   .then(() => App.fetchSubvols(mnt, i))
                   .catch((e) => customAlert("Failed", e.message));
               },
+              true,
             );
-          } else if (op.startsWith("snap")) {
-            const snapPromptTitle = mnt === "/" ? "Snapshot Root (/)" : `Snapshot Volume (${mnt})`;
+          } else if (op === "clone-snap") {
+            const snapBase = p.split("/").pop();
+            const defaultCloneName = `${snapBase}_restored`;
             customPrompt(
-              snapPromptTitle,
-              "Snapshot Name:",
-              sName(
-                new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19),
-              ),
-              "Create Snapshot",
-              (n) => {
-                if (n) {
-                  const script = `
+              "Restore / Clone Snapshot",
+              "Enter a name for the new subvolume (will be created as read-write):",
+              defaultCloneName,
+              "Clone Subvolume",
+              (newSubvolName) => {
+                if (!newSubvolName) return;
+                const cleanSubvol = newSubvolName.trim().replace(/[^a-zA-Z0-9._-]/g, "");
+                if (!cleanSubvol) {
+                  customAlert("Error", "Valid subvolume name required (letters, numbers, dashes, underscores).");
+                  return;
+                }
+                const script = `
 MNT="$1"
-SRC="$2"
-DEST="$3"
+SNAP_PATH="$2"
+NEW_NAME="$3"
 
-DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | sed 's/\\[.*\\]//' | head -n 1)
+DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | head -n 1 | sed 's/\\[.*\\]//')
 [ -z "$DEV" ] && DEV=$(df "$MNT" 2>/dev/null | awk 'NR==2 {print $1}')
 echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
 
-# Find underlying subvolume for MNT (e.g. @home for /home)
-MNT_SUBVOL=$(findmnt -n -o FSROOT -T "$MNT" 2>/dev/null | sed 's/^\\///')
-[ -z "$SRC" ] && [ -n "$MNT_SUBVOL" ] && SRC="$MNT_SUBVOL"
+SRC_PATH=""
+if [ -e "$MNT/$SNAP_PATH" ] && btrfs subvolume show "$MNT/$SNAP_PATH" >/dev/null 2>&1; then
+    SRC_PATH="$MNT/$SNAP_PATH"
+elif [ -e "/$SNAP_PATH" ] && btrfs subvolume show "/$SNAP_PATH" >/dev/null 2>&1; then
+    SRC_PATH="/$SNAP_PATH"
+else
+    TMP=$(mktemp -d)
+    if [ -b "$DEV" ] && mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
+        if [ -e "$TMP/$SNAP_PATH" ]; then
+            DEST_PATH="$MNT/$NEW_NAME"
+            [ "$MNT" = "/" ] && DEST_PATH="/$NEW_NAME"
+            ERR=$(btrfs subvolume snapshot "$TMP/$SNAP_PATH" "$DEST_PATH" 2>&1)
+            RES=$?
+            umount "$TMP" 2>/dev/null || true
+            rmdir "$TMP" 2>/dev/null || true
+            if [ $RES -eq 0 ]; then
+                echo "Snapshot restored successfully to $DEST_PATH"
+                exit 0
+            else
+                echo "ERROR: $ERR"
+                exit 1
+            fi
+        fi
+        umount "$TMP" 2>/dev/null || true
+    fi
+    rmdir "$TMP" 2>/dev/null || true
+fi
+
+DEST_PATH="$MNT/$NEW_NAME"
+[ "$MNT" = "/" ] && DEST_PATH="/$NEW_NAME"
+
+if [ -z "$SRC_PATH" ]; then
+    echo "ERROR: Could not locate snapshot source '/$SNAP_PATH'."
+    exit 1
+fi
+
+if [ -e "$DEST_PATH" ]; then
+    echo "ERROR: Destination path '$DEST_PATH' already exists."
+    exit 1
+fi
+
+ERR=$(btrfs subvolume snapshot "$SRC_PATH" "$DEST_PATH" 2>&1)
+if [ $? -eq 0 ]; then
+    echo "Snapshot restored successfully to $DEST_PATH"
+    exit 0
+else
+    echo "ERROR: $ERR"
+    exit 1
+fi
+`;
+                cmd(["sh", "-c", script, "--", mnt, p, cleanSubvol])
+                  .then((out) => {
+                    customAlert("Restore / Clone Success", out);
+                    App.fetchSubvols(mnt, i || tgt.getAttribute("data-index"));
+                  })
+                  .catch((e) => customAlert("Clone Failed", e.message));
+              },
+            );
+          } else if (op === "toggle-ro") {
+            const targetRo = tgt.getAttribute("data-ro") === "true";
+            const actionWord = targetRo ? "Lock as Read-Only" : "Unlock as Read-Write";
+            customConfirm(
+              `${actionWord}`,
+              `Change permissions for "/${p}" to ${targetRo ? "Read-Only (write-protected)" : "Read-Write"}?`,
+              actionWord,
+              () => {
+                const script = `
+MNT="$1"
+SUB_PATH="$2"
+VAL="$3"
+
+DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | head -n 1 | sed 's/\\[.*\\]//')
+[ -z "$DEV" ] && DEV=$(df "$MNT" 2>/dev/null | awk 'NR==2 {print $1}')
+echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
 
 TMP=$(mktemp -d)
 IS_MOUNTED=0
@@ -747,20 +1003,195 @@ if [ -b "$DEV" ] || [ -n "$DEV" ]; then
     fi
 fi
 
-SNAP_DONE=0
+TARGET_PATH=""
+if [ "$IS_MOUNTED" -eq 1 ] && [ -e "$TMP/$SUB_PATH" ]; then
+    TARGET_PATH="$TMP/$SUB_PATH"
+elif [ -e "$MNT/$SUB_PATH" ]; then
+    TARGET_PATH="$MNT/$SUB_PATH"
+elif [ -e "/$SUB_PATH" ]; then
+    TARGET_PATH="/$SUB_PATH"
+fi
+
+RES=1
+if [ -n "$TARGET_PATH" ]; then
+    btrfs property set "$TARGET_PATH" ro "$VAL"
+    RES=$?
+fi
+
 if [ "$IS_MOUNTED" -eq 1 ]; then
-    if [ -n "$SRC" ] && [ -e "$TMP/$SRC" ]; then
-        btrfs subvolume snapshot "$TMP/$SRC" "$TMP/$DEST" 2>/dev/null && SNAP_DONE=1
-    else
-        btrfs subvolume snapshot "$MNT" "$TMP/$DEST" 2>/dev/null && SNAP_DONE=1
+    umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true
+fi
+rmdir "$TMP" 2>/dev/null || true
+exit $RES
+`;
+                cmd(["sh", "-c", script, "--", mnt, p, targetRo ? "true" : "false"])
+                  .then(() => {
+                    customAlert("Success", `Subvolume /${p} permission changed to ${targetRo ? "Read-Only" : "Read-Write"}.`);
+                    App.fetchSubvols(mnt, i || tgt.getAttribute("data-index"));
+                  })
+                  .catch((e) => customAlert("Error", "Failed to change property: " + e.message));
+              },
+            );
+          } else if (op === "defrag-subvol") {
+            customConfirm(
+              "Defragment Subvolume",
+              `Run recursive defragmentation on "/${p}"?`,
+              "Start Defrag",
+              () => {
+                termLog(mnt, `btrfs filesystem defragment -r -v (/${p})`, "cmd");
+                setTermStatus(mnt, "Defragging...", true);
+                const script = `
+MNT="$1"
+SUB_PATH="$2"
+
+DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | head -n 1 | sed 's/\\[.*\\]//')
+[ -z "$DEV" ] && DEV=$(df "$MNT" 2>/dev/null | awk 'NR==2 {print $1}')
+echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
+
+TMP=$(mktemp -d)
+IS_MOUNTED=0
+if [ -b "$DEV" ] || [ -n "$DEV" ]; then
+    if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
+        IS_MOUNTED=1
     fi
 fi
 
+TARGET_PATH=""
+if [ "$IS_MOUNTED" -eq 1 ] && [ -e "$TMP/$SUB_PATH" ]; then
+    TARGET_PATH="$TMP/$SUB_PATH"
+elif [ -e "$MNT/$SUB_PATH" ]; then
+    TARGET_PATH="$MNT/$SUB_PATH"
+elif [ -e "/$SUB_PATH" ]; then
+    TARGET_PATH="/$SUB_PATH"
+fi
+
+if [ -n "$TARGET_PATH" ]; then
+    RAW=$(btrfs filesystem defragment -r -v "$TARGET_PATH" 2>&1 || true)
+    echo "$RAW" | head -n 20
+    echo "> Defragmentation finished for /$SUB_PATH"
+else
+    echo "ERROR: Target subvolume path not found."
+fi
+
+if [ "$IS_MOUNTED" -eq 1 ]; then
+    umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true
+fi
+rmdir "$TMP" 2>/dev/null || true
+`;
+                cmd(["sh", "-c", script, "--", mnt, p])
+                  .then((o) => {
+                    termLog(mnt, o, "success");
+                    setTermStatus(mnt, "Idle", false);
+                  })
+                  .catch((err) => {
+                    termLog(mnt, `Defrag error: ${err.message}`, "err");
+                    setTermStatus(mnt, "Error", false);
+                  });
+              },
+            );
+          } else if (op.startsWith("snap")) {
+            const snapPromptTitle = p
+              ? `Snapshot Subvolume (/${p})`
+              : mnt === "/"
+                ? "Snapshot Root (/)"
+                : `Snapshot Volume (${mnt})`;
+            customPrompt(
+              snapPromptTitle,
+              "Snapshot Name:",
+              sName(
+                new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19),
+              ),
+              "Create Snapshot",
+              (n) => {
+                if (!n) return;
+                const cleanName = n.trim().replace(/[^a-zA-Z0-9._-]/g, "");
+                if (!cleanName) {
+                  customAlert("Error", "Valid snapshot name required (letters, numbers, dashes, underscores).");
+                  return;
+                }
+                const script = `
+MNT="$1"
+SUB_PATH="$2"
+DEST="$3"
+
+DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | head -n 1 | sed 's/\\[.*\\]//')
+[ -z "$DEV" ] && DEV=$(df "$MNT" 2>/dev/null | awk 'NR==2 {print $1}')
+echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
+
+# 1. Determine exact source subvolume
+TARGET_SRC=""
+if [ -n "$SUB_PATH" ]; then
+    if [ -d "$MNT/$SUB_PATH" ] && btrfs subvolume show "$MNT/$SUB_PATH" >/dev/null 2>&1; then
+        TARGET_SRC="$MNT/$SUB_PATH"
+    elif [ -d "/$SUB_PATH" ] && btrfs subvolume show "/$SUB_PATH" >/dev/null 2>&1; then
+        TARGET_SRC="/$SUB_PATH"
+    fi
+fi
+
+if [ -z "$TARGET_SRC" ]; then
+    if btrfs subvolume show "$MNT" >/dev/null 2>&1; then
+        TARGET_SRC="$MNT"
+    else
+        FSROOT_DETECT=$(findmnt -n -o FSROOT -T "$MNT" 2>/dev/null | head -n 1 | sed 's/^\///')
+        if [ -n "$FSROOT_DETECT" ] && [ "$FSROOT_DETECT" != "root" ] && [ -d "$MNT/$FSROOT_DETECT" ] && btrfs subvolume show "$MNT/$FSROOT_DETECT" >/dev/null 2>&1; then
+            TARGET_SRC="$MNT/$FSROOT_DETECT"
+        else
+            TARGET_SRC="$MNT"
+        fi
+    fi
+fi
+
+# 2. Check if subvolid=5 temp mount is allowed (Arch Linux / non-SELinux standard)
+TMP=$(mktemp -d)
+IS_MOUNTED=0
+if [ -b "$DEV" ] || [ -n "$DEV" ]; then
+    if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
+        IS_MOUNTED=1
+    fi
+fi
+
+SNAP_DONE=0
+ERROR_MSG=""
+
+# Method A: Top-level pool snapshot (stores in top level subvolid=5)
+if [ "$IS_MOUNTED" -eq 1 ]; then
+    FSROOT_RAW=$(findmnt -n -o FSROOT -T "$TARGET_SRC" 2>/dev/null | head -n 1 | sed 's/^\///')
+    SRC_IN_POOL=""
+    if [ -n "$FSROOT_RAW" ] && [ -e "$TMP/$FSROOT_RAW" ]; then
+        SRC_IN_POOL="$TMP/$FSROOT_RAW"
+    elif [ -n "$SUB_PATH" ] && [ -e "$TMP/$SUB_PATH" ]; then
+        SRC_IN_POOL="$TMP/$SUB_PATH"
+    fi
+
+    if [ -n "$SRC_IN_POOL" ]; then
+        ERR=$(btrfs subvolume snapshot "$SRC_IN_POOL" "$TMP/$DEST" 2>&1) && SNAP_DONE=1 || ERROR_MSG="$ERR"
+    else
+        ERR=$(btrfs subvolume snapshot "$TARGET_SRC" "$TMP/$DEST" 2>&1) && SNAP_DONE=1 || ERROR_MSG="$ERR"
+    fi
+fi
+
+# Method B: Universal local snapshot (works seamlessly on Fedora/RHEL with SELinux)
 if [ "$SNAP_DONE" -eq 0 ]; then
-    TARGET_SRC="$MNT"
-    [ -n "$SRC" ] && [ -e "$MNT/$SRC" ] && TARGET_SRC="$MNT/$SRC"
-    [ -n "$SRC" ] && [ -e "/$SRC" ] && TARGET_SRC="/$SRC"
-    btrfs subvolume snapshot "$TARGET_SRC" "$MNT/$DEST" 2>/dev/null && SNAP_DONE=1
+    SNAP_DIR=""
+    if [ -d "$MNT/.snapshots" ]; then
+        SNAP_DIR="$MNT/.snapshots"
+    elif [ "$MNT" = "/" ] && [ -d "/.snapshots" ]; then
+        SNAP_DIR="/.snapshots"
+    else
+        if mkdir -p "$MNT/.snapshots" 2>/dev/null; then
+            SNAP_DIR="$MNT/.snapshots"
+        else
+            SNAP_DIR="$MNT"
+        fi
+    fi
+
+    TARGET_DEST="$SNAP_DIR/$DEST"
+    ERR=$(btrfs subvolume snapshot "$TARGET_SRC" "$TARGET_DEST" 2>&1)
+    if [ $? -eq 0 ]; then
+        SNAP_DONE=1
+    else
+        ERROR_MSG="$ERR"
+    fi
 fi
 
 if [ "$IS_MOUNTED" -eq 1 ]; then
@@ -772,19 +1203,18 @@ if [ "$SNAP_DONE" -eq 1 ]; then
     echo "Success"
     exit 0
 else
-    echo "Failed to create snapshot."
+    echo "ERROR: \${ERROR_MSG:-Failed to create snapshot. Ensure volume is mounted read-write.}"
     exit 1
 fi
 `;
-                  cmd(["sh", "-c", script, "--", mnt, p, n])
-                    .then(() =>
-                      App.fetchSubvols(
-                        mnt,
-                        i || tgt.getAttribute("data-index"),
-                      ),
-                    )
-                    .catch((e) => customAlert("Failed", e.message));
-                }
+                cmd(["sh", "-c", script, "--", mnt, p, cleanName])
+                  .then(() =>
+                    App.fetchSubvols(
+                      mnt,
+                      i || tgt.getAttribute("data-index"),
+                    ),
+                  )
+                  .catch((e) => customAlert("Snapshot Failed", e.message));
               },
             );
           } else if (op === "default") {
