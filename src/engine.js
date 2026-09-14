@@ -799,11 +799,6 @@ rmdir "$TMP" 2>/dev/null || true
                 </td>
                 <td class="text-right">
                     <div class="btn-group-sharp">
-                        <button class="btn-tool btn-action" title="Create Snapshot" data-action="subvol-ops" data-op="snap-subvol" data-mount="${mount}" data-path="${path}" data-index="${idx}">Snap</button>
-                        <button class="btn-tool btn-action" title="Defrag subvolume" data-action="subvol-ops" data-op="defrag-subvol" data-mount="${mount}" data-path="${path}" data-index="${idx}">Defrag</button>
-                        <button class="btn-tool btn-action" title="${isRo ? "Make Writable" : "Make Read-Only"}" data-action="subvol-ops" data-op="toggle-ro" data-ro="${isRo ? "false" : "true"}" data-mount="${mount}" data-path="${path}" data-index="${idx}">
-                            ${isRo ? "Unlock" : "Lock"}
-                        </button>
                         <button class="btn-tool btn-action" title="${nocow ? "Enable CoW (+C)" : "Disable CoW (No_COW)"}" data-action="subvol-ops" data-op="${nocow ? "enable-cow" : "disable-cow"}" data-mount="${mount}" data-path="${path}" data-index="${idx}">
                             ${nocow ? "+CoW" : "NoCoW"}
                         </button>

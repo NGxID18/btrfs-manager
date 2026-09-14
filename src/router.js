@@ -1106,64 +1106,6 @@ exit $RES
                   .catch((e) => customAlert("Error", "Failed to change property: " + e.message));
               },
             );
-          } else if (op === "defrag-subvol") {
-            customConfirm(
-              "Defragment Subvolume",
-              `Run recursive defragmentation on "/${p}"?`,
-              "Start Defrag",
-              () => {
-                termLog(mnt, `btrfs filesystem defragment -r -v (/${p})`, "cmd");
-                setTermStatus(mnt, "Defragging...", true);
-                const script = `
-MNT="$1"
-SUB_PATH="$2"
-
-DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | head -n 1 | sed 's/\\[.*\\]//')
-[ -z "$DEV" ] && DEV=$(df "$MNT" 2>/dev/null | awk 'NR==2 {print $1}')
-echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
-
-TMP=$(mktemp -d)
-trap 'umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true; rmdir "$TMP" 2>/dev/null || true' EXIT
-IS_MOUNTED=0
-if [ -b "$DEV" ] || [ -n "$DEV" ]; then
-    if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
-        IS_MOUNTED=1
-    fi
-fi
-
-TARGET_PATH=""
-if [ "$IS_MOUNTED" -eq 1 ] && [ -e "$TMP/$SUB_PATH" ]; then
-    TARGET_PATH="$TMP/$SUB_PATH"
-elif [ -e "$MNT/$SUB_PATH" ]; then
-    TARGET_PATH="$MNT/$SUB_PATH"
-elif [ -e "/$SUB_PATH" ]; then
-    TARGET_PATH="/$SUB_PATH"
-fi
-
-if [ -n "$TARGET_PATH" ]; then
-    RAW=$(btrfs filesystem defragment -r -v "$TARGET_PATH" 2>&1 || true)
-    echo "$RAW" | head -n 20
-    echo "> Defragmentation finished for /$SUB_PATH"
-else
-    echo "ERROR: Target subvolume path not found."
-fi
-
-if [ "$IS_MOUNTED" -eq 1 ]; then
-    umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true
-fi
-rmdir "$TMP" 2>/dev/null || true
-`;
-                cmd(["sh", "-c", script, "--", mnt, p])
-                  .then((o) => {
-                    termLog(mnt, o, "success");
-                    setTermStatus(mnt, "Idle", false);
-                  })
-                  .catch((err) => {
-                    termLog(mnt, `Defrag error: ${err.message}`, "err");
-                    setTermStatus(mnt, "Error", false);
-                  });
-              },
-            );
           } else if (op.startsWith("snap")) {
             const snapPromptTitle = p
               ? `Snapshot Subvolume (/${p})`
