@@ -32,6 +32,31 @@ const getEmptyDevices = () => {
 const activeScrubTimers = {};
 const activeBalanceTimers = {};
 
+const updateLiveStatus = (mnt, text) => {
+  const boxSafe = (mnt || "root").replace(/[^a-zA-Z0-9]/g, "-");
+  const b = $(`maint-console-${boxSafe}`);
+  if (!b) return;
+  let liveEl = $(`term-live-${boxSafe}`);
+  if (!liveEl) {
+    liveEl = document.createElement("div");
+    liveEl.id = `term-live-${boxSafe}`;
+    liveEl.className = "term-line term-muted";
+    b.appendChild(liveEl);
+  }
+  const escaped = (text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  liveEl.innerHTML = `<span style="color:#60cdff; font-weight:600;">[Live Progress]</span>\n${escaped}`;
+  b.scrollTop = b.scrollHeight;
+};
+
+const clearLiveStatus = (mnt) => {
+  const boxSafe = (mnt || "root").replace(/[^a-zA-Z0-9]/g, "-");
+  const liveEl = $(`term-live-${boxSafe}`);
+  if (liveEl) liveEl.remove();
+};
+
 const startScrubMonitor = (mnt) => {
   const boxSafe = (mnt || "root").replace(/[^a-zA-Z0-9]/g, "-");
   const scrubBtn = $(`btn-scrub-${boxSafe}`);
@@ -43,10 +68,11 @@ const startScrubMonitor = (mnt) => {
           out.includes("finished") ||
           out.includes("aborted") ||
           out.includes("canceled");
-        termLog(mnt, `[Scrub Status]\n${out}`);
+        updateLiveStatus(mnt, out.trim());
         if (isFinished) {
           clearInterval(activeScrubTimers[mnt]);
           delete activeScrubTimers[mnt];
+          clearLiveStatus(mnt);
           if (scrubBtn) {
             scrubBtn.innerText = "Scrub";
             scrubBtn.classList.remove("btn-danger");
@@ -68,7 +94,7 @@ const startBalanceMonitor = (mnt) => {
   activeBalanceTimers[mnt] = setInterval(() => {
     cmd(["btrfs", "balance", "status", mnt])
       .then((out) => {
-        termLog(mnt, `[Balance Status]\n${out}`);
+        updateLiveStatus(mnt, out.trim());
         const isFinished =
           out.includes("No balance found") ||
           out.includes("finished") ||
@@ -77,6 +103,7 @@ const startBalanceMonitor = (mnt) => {
         if (isFinished) {
           clearInterval(activeBalanceTimers[mnt]);
           delete activeBalanceTimers[mnt];
+          clearLiveStatus(mnt);
           if (balBtn) {
             balBtn.innerText = "Balance";
             balBtn.classList.remove("btn-danger");
@@ -163,6 +190,10 @@ const termLog = (mnt, text, type = "") => {
     b.innerHTML += `<div class="term-line">${escaped}</div>`;
   }
   b.scrollTop = b.scrollHeight;
+  while (b.childElementCount > 200) {
+    if (b.firstElementChild.id && b.firstElementChild.id.startsWith("term-live-")) break;
+    b.removeChild(b.firstElementChild);
+  }
 };
 
 const setTermStatus = (mnt, text, isRunning = false) => {
@@ -174,7 +205,33 @@ const setTermStatus = (mnt, text, isRunning = false) => {
   }
 };
 
+const initTheme = () => {
+  const saved = localStorage.getItem("btrfs_manager_theme");
+  const theme = saved || "dark";
+  document.documentElement.setAttribute("data-theme", theme);
+  updateThemeUi(theme);
+};
+
+const updateThemeUi = (theme) => {
+  const lbl = $("theme-label");
+  const icon = $("theme-icon");
+  if (lbl) lbl.innerText = theme === "dark" ? "Ganti ke Tema Terang" : "Ganti ke Tema Gelap";
+  if (icon) icon.innerText = theme === "dark" ? "☀️" : "🌙";
+};
+
+const toggleTheme = () => {
+  const current = document.documentElement.getAttribute("data-theme") || "dark";
+  const target = current === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", target);
+  localStorage.setItem("btrfs_manager_theme", target);
+  updateThemeUi(target);
+};
+
+// Initial theme apply before render
+initTheme();
+
 document.addEventListener("DOMContentLoaded", () => {
+  initTheme();
   App.fetch();
 
   document.body.addEventListener("click", (e) => {
@@ -693,8 +750,18 @@ fi`;
                     ? `/${p}`
                     : `${mnt}/${p}`
                   : mnt;
-                const cleanOldCron =
-                  "rm -f /etc/cron.hourly/btrfs_* /etc/cron.daily/btrfs_* /etc/cron.weekly/btrfs_* 2>/dev/null || true;";
+                const cleanOldCron = `
+for cdir in /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly; do
+    if [ -d "$cdir" ]; then
+        for cfile in "$cdir"/btrfs_*; do
+            [ -f "$cfile" ] || continue
+            if grep -qs "$1" "$cfile"; then
+                rm -f "$cfile" 2>/dev/null || true
+            fi
+        done
+    fi
+done
+`;
 
                 if (freq === "disable") {
                   const bashScript = `
@@ -788,7 +855,7 @@ printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRet
           } else if (op === "create") {
             const rawNm = $(`new-subvol-${i}`)?.value.trim();
             const nm = rawNm ? rawNm.replace(/[^a-zA-Z0-9._-]/g, "") : "";
-            if (!nm) {
+            if (!nm || nm === "." || nm === "..") {
               customAlert("Error", "Valid subvolume name required (letters, numbers, dashes, underscores).");
               return;
             }
@@ -808,8 +875,12 @@ printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRet
             const isProtected =
               tgt.getAttribute("data-is-protected") === "true" ||
               Boolean(mountedAt) ||
-              (mnt === "/" && (p === "@" || p === "" || p === "root" || p === "@root")) ||
-              p === "@";
+              (mnt === "/" &&
+                (p === "@" ||
+                  p === "" ||
+                  p === "root" ||
+                  p === "rootfs" ||
+                  p === "@root"));
 
             if (isProtected) {
               customAlert(
@@ -852,6 +923,7 @@ echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | 
 echo "$DEV" | grep -q "^LABEL=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
 
 TMP=$(mktemp -d)
+trap 'umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true; rmdir "$TMP" 2>/dev/null || true' EXIT
 IS_MOUNTED=0
 if [ -b "$DEV" ] || [ -n "$DEV" ]; then
     if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
@@ -925,6 +997,7 @@ elif [ -e "/$SNAP_PATH" ] && btrfs subvolume show "/$SNAP_PATH" >/dev/null 2>&1;
     SRC_PATH="/$SNAP_PATH"
 else
     TMP=$(mktemp -d)
+    trap 'umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true; rmdir "$TMP" 2>/dev/null || true' EXIT
     if [ -b "$DEV" ] && mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
         if [ -e "$TMP/$SNAP_PATH" ]; then
             DEST_PATH="$MNT/$NEW_NAME"
@@ -994,6 +1067,7 @@ DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | head -n 1 | sed 's/\\[.*\\]//
 echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
 
 TMP=$(mktemp -d)
+trap 'umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true; rmdir "$TMP" 2>/dev/null || true' EXIT
 IS_MOUNTED=0
 if [ -b "$DEV" ] || [ -n "$DEV" ]; then
     if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
@@ -1049,6 +1123,7 @@ DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | head -n 1 | sed 's/\\[.*\\]//
 echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
 
 TMP=$(mktemp -d)
+trap 'umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true; rmdir "$TMP" 2>/dev/null || true' EXIT
 IS_MOUNTED=0
 if [ -b "$DEV" ] || [ -n "$DEV" ]; then
     if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
@@ -1143,6 +1218,7 @@ fi
 
 # 2. Check if subvolid=5 temp mount is allowed (Arch Linux / non-SELinux standard)
 TMP=$(mktemp -d)
+trap 'umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true; rmdir "$TMP" 2>/dev/null || true' EXIT
 IS_MOUNTED=0
 if [ -b "$DEV" ] || [ -n "$DEV" ]; then
     if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
@@ -1220,7 +1296,7 @@ fi
           } else if (op === "default") {
             customConfirm(
               "Set as Default Mount",
-              `Set subvolume ID ${tgt.getAttribute("data-subid")} (${p}) as the default root mount for ${mnt}?\n\n(This will rollback the default filesystem view to this snapshot upon next mount.)`,
+              `Set subvolume ID ${tgt.getAttribute("data-subid")} (${p}) as the default root mount for ${mnt}?\n\nNote: On Debian/Ubuntu where /etc/fstab specifies 'subvol=@' or similar, that mount option takes precedence over the default subvolume at boot. Full rollback may require restoring the snapshot into the active root subvolume.`,
               "Confirm Rollback",
               () =>
                 cmd([
@@ -1256,6 +1332,7 @@ DEV=$(findmnt -n -o SOURCE -T "$MNT" 2>/dev/null | sed 's/\\[.*\\]//' | head -n 
 echo "$DEV" | grep -q "^UUID=" && DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1)
 
 TMP=$(mktemp -d)
+trap 'umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true; rmdir "$TMP" 2>/dev/null || true' EXIT
 IS_MOUNTED=0
 if [ -b "$DEV" ] || [ -n "$DEV" ]; then
     if mount -t btrfs -o subvolid=5 "$DEV" "$TMP" 2>/dev/null; then
@@ -1518,27 +1595,123 @@ echo "DELETED"
         $("format-status").classList.remove("hidden-element"),
         ($("format-status").style.color = "var(--btn-danger)")
       );
-    let c = ["mkfs.btrfs", "-d", prof, "-m", prof, "-f"];
-    if (lbl) c.push("-L", lbl);
-    c.push(...disks);
-    $("format-status").classList.remove("hidden-element");
-    $("format-status").style.color = "var(--btn-primary)";
-    $("format-status").innerText = "> Formatting...";
-    $("btn-execute-format").disabled = true;
-    cmd(c)
-      .then(() => {
-        $("format-status").style.color = "var(--console-text)";
-        $("format-status").innerText = "Success! Volume Formatted.";
-        App.fetch();
-        setTimeout(() => {
-          $("raid-form").classList.add("hidden-element");
-          $("btn-execute-format").disabled = false;
-        }, 3000);
-      })
-      .catch((e) => {
-        $("format-status").style.color = "var(--btn-danger)";
-        $("format-status").innerText = "Failed:\n" + e.message;
-        $("btn-execute-format").disabled = false;
-      });
+
+    if ((prof === "raid0" || prof === "raid1") && disks.length < 2) {
+      customAlert(
+        "Insufficient Disks",
+        `The ${prof.toUpperCase()} profile requires at least 2 disks. You selected ${disks.length}.`,
+      );
+      return;
+    }
+    if (prof === "raid10" && disks.length < 4) {
+      customAlert(
+        "Insufficient Disks",
+        `The RAID 10 profile requires at least 4 disks. You selected ${disks.length}.`,
+      );
+      return;
+    }
+
+    customConfirm(
+      "Confirm Format & Pool Creation",
+      `Are you sure you want to format ${disks.length} device(s) into a new BTRFS pool (${prof.toUpperCase()})?\n\nTarget devices: ${disks.join(", ")}\n\nWARNING: All existing data on these disks will be PERMANENTLY ERASED.`,
+      "Format & Create",
+      () => {
+        let c = ["mkfs.btrfs", "-d", prof, "-m", prof, "-f"];
+        if (lbl) c.push("-L", lbl);
+        c.push(...disks);
+        $("format-status").classList.remove("hidden-element");
+        $("format-status").style.color = "var(--btn-primary)";
+        $("format-status").innerText = "> Formatting...";
+        $("btn-execute-format").disabled = true;
+        cmd(c)
+          .then(() => {
+            $("format-status").style.color = "var(--console-text)";
+            $("format-status").innerText = "Success! Volume Formatted.";
+            App.fetch();
+            setTimeout(() => {
+              $("raid-form").classList.add("hidden-element");
+              $("btn-execute-format").disabled = false;
+            }, 3000);
+          })
+          .catch((e) => {
+            $("format-status").style.color = "var(--btn-danger)";
+            $("format-status").innerText = "Failed:\n" + e.message;
+            $("btn-execute-format").disabled = false;
+          });
+      },
+      true,
+    );
+  });
+
+  on("btn-fab-settings", "click", (e) => {
+    e.stopPropagation();
+    const m = $("fab-menu");
+    if (m) m.classList.toggle("hidden-element");
+  });
+
+  on("btn-toggle-theme", "click", (e) => {
+    e.stopPropagation();
+    toggleTheme();
+  });
+
+  on("btn-update-extension", "click", (e) => {
+    e.stopPropagation();
+    const m = $("fab-menu");
+    if (m) m.classList.add("hidden-element");
+
+    customConfirm(
+      "Update Ekstensi BTRFS Manager",
+      "Perbarui ekstensi ke versi terbaru dari GitHub (https://github.com/NGxID18/btrfs-manager)?\n\nSistem akan mengambil kode terbaru dari branch main dan memuat ulang antarmuka.",
+      "Update Sekarang",
+      () => {
+        customAlert(
+          "Memproses Update",
+          "Sedang mengunduh pembaruan terbaru dari repositori GitHub...",
+        );
+        const updateScript = `
+TARGET_DIR="/usr/share/cockpit/btrfs-manager"
+if [ -d "$TARGET_DIR/.git" ]; then
+    cd "$TARGET_DIR"
+    git config --global --add safe.directory "$TARGET_DIR" 2>/dev/null || true
+    git fetch origin main 2>&1
+    git reset --hard origin/main 2>&1
+    echo "SUCCESS"
+else
+    TMP_DIR=$(mktemp -d)
+    trap 'rm -rf "$TMP_DIR"' EXIT
+    git clone https://github.com/NGxID18/btrfs-manager "$TMP_DIR" 2>&1
+    cp -rf "$TMP_DIR"/. "$TARGET_DIR"/
+    echo "SUCCESS"
+fi
+`;
+        cmd(["sh", "-c", updateScript])
+          .then(() => {
+            customAlert(
+              "Update Berhasil!",
+              "Ekstensi telah berhasil diperbarui ke versi terbaru. Halaman akan dimuat ulang...",
+            );
+            setTimeout(() => window.location.reload(), 1800);
+          })
+          .catch((err) => {
+            customAlert(
+              "Update Gagal",
+              "Gagal memperbarui ekstensi:\n" + err.message,
+            );
+          });
+      },
+    );
+  });
+
+  document.addEventListener("click", (e) => {
+    const container = $("fab-settings-container");
+    const menu = $("fab-menu");
+    if (
+      menu &&
+      !menu.classList.contains("hidden-element") &&
+      container &&
+      !container.contains(e.target)
+    ) {
+      menu.classList.add("hidden-element");
+    }
   });
 });

@@ -3,7 +3,12 @@ window.on = (id, evt, cb) => {
   const e = $(id);
   if (e) e.addEventListener(evt, cb);
 };
-window.cmd = (args) => cockpit.spawn(args, { superuser: "require" });
+window.cmd = (args, opts = {}) =>
+  cockpit.spawn(args, {
+    superuser: "require",
+    environ: ["LC_ALL=C.UTF-8", "LANG=C.UTF-8"],
+    ...opts,
+  });
 
 window.parseSize = (s) => {
   if (!s) return 0;

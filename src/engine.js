@@ -284,9 +284,8 @@ fi
 echo "$STATUS"
                 `;
 
-        const [dfOut, btrfsDfOut, hOut, snapOut, optsOut, statsOut] = await Promise.all([
+        const [dfOut, hOut, snapOut, optsOut, statsOut] = await Promise.all([
           cmd(["btrfs", "filesystem", "df", v.mountPoint]),
-          cmd(["btrfs", "filesystem", "df", "-b", v.mountPoint]).catch(() => ""),
           cmd(["df", "-B1", v.mountPoint]),
           cmd(["sh", "-c", snapScript, "--", v.mountPoint]).catch(
             () => "Not Configured",
@@ -338,27 +337,6 @@ echo "$STATUS"
             ? `<span class="text-danger fw-bold">⚠️ ${totalDevErrors} Hardware / IO Errors Detected!</span>`
             : `<span class="text-success fw-bold">✓ Healthy (0 IO Errors)</span>`;
 
-        let dataAlloc = null;
-        let metaAlloc = null;
-        if (btrfsDfOut) {
-          const dMatch = btrfsDfOut.match(/Data,[^:]*:\s*total=(\d+),\s*used=(\d+)/i);
-          if (dMatch) {
-            const total = parseInt(dMatch[1], 10);
-            const used = parseInt(dMatch[2], 10);
-            const pct = total > 0 ? parseFloat(((used / total) * 100).toFixed(1)) : 0;
-            dataAlloc = { total, used, pct, totalFmt: formatSize(total), usedFmt: formatSize(used) };
-          }
-          const mMatch = btrfsDfOut.match(/Metadata,[^:]*:\s*total=(\d+),\s*used=(\d+)/i);
-          if (mMatch) {
-            const total = parseInt(mMatch[1], 10);
-            const used = parseInt(mMatch[2], 10);
-            const pct = total > 0 ? parseFloat(((used / total) * 100).toFixed(1)) : 0;
-            metaAlloc = { total, used, pct, totalFmt: formatSize(total), usedFmt: formatSize(used) };
-          }
-        }
-        v.dataAlloc = dataAlloc;
-        v.metaAlloc = metaAlloc;
-
         const dM = dfOut.match(/Data,\s*(.*?):/i),
           mM = dfOut.match(/Metadata,\s*(.*?):/i);
         v.raid =
@@ -403,20 +381,6 @@ echo "$STATUS"
         $(`health-display-${v.idx}`).innerHTML = v.healthHtml;
       if ($(`opts-display-${v.idx}`))
         $(`opts-display-${v.idx}`).innerHTML = v.mountOptsHtml;
-    }
-    if (v.dataAlloc && $(`alloc-data-bar-${v.idx}`)) {
-      $(`alloc-data-bar-${v.idx}`).style.width = `${v.dataAlloc.pct}%`;
-      if ($(`alloc-data-text-${v.idx}`))
-        $(`alloc-data-text-${v.idx}`).innerText = `${v.dataAlloc.usedFmt} / ${v.dataAlloc.totalFmt} (${v.dataAlloc.pct}%)`;
-    }
-    if (v.metaAlloc && $(`alloc-meta-bar-${v.idx}`)) {
-      $(`alloc-meta-bar-${v.idx}`).style.width = `${v.metaAlloc.pct}%`;
-      if ($(`alloc-meta-text-${v.idx}`))
-        $(`alloc-meta-text-${v.idx}`).innerText = `${v.metaAlloc.usedFmt} / ${v.metaAlloc.totalFmt} (${v.metaAlloc.pct}%)`;
-      if ($(`meta-warning-badge-${v.idx}`)) {
-        $(`meta-warning-badge-${v.idx}`).classList.toggle("hidden-element", v.metaAlloc.pct < 80);
-      }
-      $(`alloc-meta-bar-${v.idx}`).classList.toggle("warn-fill", v.metaAlloc.pct >= 80);
     }
   },
 
@@ -491,7 +455,8 @@ echo "$STATUS"
         const missingBadge = d.missing
           ? `<span class="badge-danger">MISSING</span>`
           : "";
-        const removeBtn = v.mountPoint
+        const canRemove = v.devs && v.devs.length > 1;
+        const removeBtn = v.mountPoint && canRemove
           ? d.missing
             ? `<button class="btn-tool btn-tool-danger btn-action" data-action="remove-missing-dev" data-mount="${v.mountPoint}">Remove Missing</button>`
             : `<button class="btn-tool btn-tool-danger btn-action" data-action="remove-dev" data-mount="${v.mountPoint}" data-devpath="${d.path}">Remove</button>`
@@ -506,11 +471,17 @@ echo "$STATUS"
       })
       .join("");
 
+    const rootDevices = Object.keys(this.mnt).filter(
+      (k) => this.mnt[k] === "/"
+    );
     const isRoot =
       v.mountPoint === "/" ||
       v.label.toLowerCase().includes("root") ||
-      (this.mnt["/"] &&
-        v.devs.some((d) => this.mnt["/"] && d.path.includes(this.mnt["/"])));
+      rootDevices.some((rd) =>
+        v.devs.some(
+          (d) => d.path === rd || rd.startsWith(d.path) || d.path.startsWith(rd),
+        ),
+      );
 
     const boxSafe = (v.mountPoint || "root").replace(/[^a-zA-Z0-9]/g, "-");
 
@@ -537,33 +508,6 @@ echo "$STATUS"
                             <div class="spec-row"><span class="spec-label">Hardware Health</span><span id="health-display-${v.idx}" class="spec-val">${v.healthHtml || '<span class="text-success fw-bold">✓ Healthy (0 IO Errors)</span>'}</span></div>
                             <div class="spec-row"><span class="spec-label">Mount Features</span><span id="opts-display-${v.idx}" class="spec-val">${v.mountOptsHtml || '<span class="text-muted">Standard</span>'}</span></div>
                         </div>
-                        ${
-                          v.mountPoint
-                            ? `<div class="alloc-bars-box mb-20">
-                            <div class="alloc-row mb-10">
-                                <div class="alloc-header">
-                                    <span class="alloc-label">Data Chunk Allocation</span>
-                                    <span id="alloc-data-text-${v.idx}" class="alloc-stat">${v.dataAlloc ? `${v.dataAlloc.usedFmt} / ${v.dataAlloc.totalFmt} (${v.dataAlloc.pct}%)` : "Calculating..."}</span>
-                                </div>
-                                <div class="alloc-progress-track">
-                                    <div id="alloc-data-bar-${v.idx}" class="alloc-progress-fill data-fill" style="width: ${v.dataAlloc ? v.dataAlloc.pct : 0}%;"></div>
-                                </div>
-                            </div>
-                            <div class="alloc-row">
-                                <div class="alloc-header">
-                                    <span>
-                                        <span class="alloc-label">Metadata Chunk Allocation</span>
-                                        <span id="meta-warning-badge-${v.idx}" class="badge-meta-warn ${v.metaAlloc && v.metaAlloc.pct >= 80 ? "" : "hidden-element"}">⚠️ High Meta Usage (>80%)</span>
-                                    </span>
-                                    <span id="alloc-meta-text-${v.idx}" class="alloc-stat">${v.metaAlloc ? `${v.metaAlloc.usedFmt} / ${v.metaAlloc.totalFmt} (${v.metaAlloc.pct}%)` : "Calculating..."}</span>
-                                </div>
-                                <div class="alloc-progress-track">
-                                    <div id="alloc-meta-bar-${v.idx}" class="alloc-progress-fill meta-fill ${v.metaAlloc && v.metaAlloc.pct >= 80 ? "warn-fill" : ""}" style="width: ${v.metaAlloc ? v.metaAlloc.pct : 0}%;"></div>
-                                </div>
-                            </div>
-                        </div>`
-                            : ""
-                        }
                         <h5 class="sub-section-title mt-20 mb-10">Block Devices</h5>
                         <div class="table-scroll-container mb-15">
                             <table class="data-table">
@@ -676,6 +620,7 @@ if echo "$DEV" | grep -q "^UUID="; then DEV=$(blkid -t "$DEV" -o device 2>/dev/n
 if echo "$DEV" | grep -q "^LABEL="; then DEV=$(blkid -t "$DEV" -o device 2>/dev/null | head -n 1); fi
 
 TMP=$(mktemp -d)
+trap 'umount "$TMP" 2>/dev/null || umount -l "$TMP" 2>/dev/null || true; rmdir "$TMP" 2>/dev/null || true' EXIT
 IS_MOUNTED=0
 
 if [ -b "$DEV" ] || [ -n "$DEV" ]; then
@@ -708,7 +653,13 @@ btrfs subvolume list "$SCAN_DIR" 2>/dev/null | while read -r line; do
     elif [ -e "/$sub_path" ]; then
         TARGET_DIR="/$sub_path"
     else
-        FOUND_MNT=$(echo "$ACTIVE_MOUNTS" | grep "\\[$sub_path\\]" | awk '{print $1}' | head -n 1)
+        FOUND_MNT=$(echo "$ACTIVE_MOUNTS" | while read -r m_tgt m_src; do
+            s_clean=$(echo "$m_src" | sed -n 's/.*\\[\\/*\\(.*\\)\\]/\\1/p')
+            if [ -n "$s_clean" ] && [ "$s_clean" = "$sub_path" ]; then
+                echo "$m_tgt"
+                break
+            fi
+        done)
         [ -n "$FOUND_MNT" ] && TARGET_DIR="$FOUND_MNT"
     fi
     
@@ -724,7 +675,13 @@ btrfs subvolume list "$SCAN_DIR" 2>/dev/null | while read -r line; do
         if echo "$attr" | grep -q "C"; then nocow="true"; fi
     fi
 
-    MOUNT_PT=$(echo "$ACTIVE_MOUNTS" | awk -v sp="$sub_path" '$2 ~ "\\[/*" sp "\\]" {print $1; exit}')
+    MOUNT_PT=$(echo "$ACTIVE_MOUNTS" | while read -r m_tgt m_src; do
+        s_clean=$(echo "$m_src" | sed -n 's/.*\\[\\/*\\(.*\\)\\]/\\1/p')
+        if [ -n "$s_clean" ] && [ "$s_clean" = "$sub_path" ]; then
+            echo "$m_tgt"
+            break
+        fi
+    done)
     
     IN_FSTAB="false"
     if grep -qs -E "subvol=(/|@)?$sub_path\\b" /etc/fstab; then
@@ -783,8 +740,8 @@ rmdir "$TMP" 2>/dev/null || true
               (path === "@" ||
                 path === "" ||
                 path === "root" ||
-                path === "@root")) ||
-            path === "@";
+                path === "rootfs" ||
+                path === "@root"));
 
           const isProtected = isRootSubvol || Boolean(mountPt) || inFstab;
 
