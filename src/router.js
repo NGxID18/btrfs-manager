@@ -11,7 +11,7 @@ const {
 } = window;
 
 const getEmptyDevices = () => {
-  return cmd(["lsblk", "-J", "-o", "NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT"]).then(
+  return cmd(["lsblk", "-J", "-o", "PATH,SIZE,TYPE,FSTYPE,MOUNTPOINT"]).then(
     (data) => {
       const extractEmpty = (devs) =>
         devs.reduce((acc, d) => {
@@ -263,29 +263,29 @@ document.addEventListener("DOMContentLoaded", () => {
           const v = App.vols.find((vol) => vol.idx == vIdx);
           const devCount = v && v.devs ? v.devs.length : 1;
           customSelect(
-            "Online RAID Conversion",
-            `Select new profile (Current pool has ${devCount} disk${devCount > 1 ? "s" : ""}):`,
+            "Change Data Protection (RAID Profile)",
+            `Select a new data protection mode for this storage pool (Currently has ${devCount} drive${devCount > 1 ? "s" : ""}):`,
             [
-              { v: "single", l: "Single (Min 1 Disk)" },
-              { v: "dup", l: "DUP - Duplicate Chunks (Min 1 Disk)" },
-              { v: "raid0", l: "RAID 0 - Striping (Min 2 Disks)" },
-              { v: "raid1", l: "RAID 1 - Mirroring (Min 2 Disks)" },
-              { v: "raid10", l: "RAID 10 - Stripe + Mirror (Min 4 Disks)" },
+              { v: "single", l: "Single - Standard storage without redundancy (Min 1 drive)" },
+              { v: "dup", l: "DUP - Duplicate data on a single drive for safety (Min 1 drive)" },
+              { v: "raid1", l: "RAID 1 (Mirror) - Data is mirrored across drives for high safety (Min 2 drives)" },
+              { v: "raid0", l: "RAID 0 (Stripe) - Maximizes speed and capacity, no safety backup (Min 2 drives)" },
+              { v: "raid10", l: "RAID 10 (Stripe + Mirror) - High speed and mirrored safety (Min 4 drives)" },
             ],
-            "Convert",
+            "Change Protection",
             (p) => {
               if (!p) return;
               if ((p === "raid0" || p === "raid1") && devCount < 2) {
                 customAlert(
-                  "Insufficient Disks",
-                  `The ${p.toUpperCase()} profile requires at least 2 physical disks in the volume (currently ${devCount}). Please add more disks first using 'Add Disk'.`,
+                  "More Drives Needed",
+                  `The ${p.toUpperCase()} profile requires at least 2 physical drives in the storage pool (currently ${devCount}). Please add more drives first using 'Add Drive'.`,
                 );
                 return;
               }
               if (p === "raid10" && devCount < 4) {
                 customAlert(
-                  "Insufficient Disks",
-                  `The RAID 10 profile requires at least 4 physical disks in the volume (currently ${devCount}). Please add more disks first using 'Add Disk'.`,
+                  "More Drives Needed",
+                  `The RAID 10 profile requires at least 4 physical drives in the storage pool (currently ${devCount}). Please add more drives first using 'Add Drive'.`,
                 );
                 return;
               }
@@ -310,7 +310,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 .then((o) => {
                   termLog(
                     mnt,
-                    `Conversion to ${p} (data: ${p}, meta: ${mProfile}) initiated in background.\n${o}`,
+                    `Protection conversion initiated in background.\n${o}`,
                     "status",
                   );
                   startBalanceMonitor(mnt);
@@ -331,27 +331,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
           if (isRunning) {
             customConfirm(
-              "Cancel Scrub",
-              `Cancel active scrub operation on ${mnt}?`,
-              "Cancel Scrub",
+              "Stop Health Check",
+              `Stop the active file health check on ${mnt}?`,
+              "Stop Check",
               () => {
                 termLog(mnt, `btrfs scrub cancel ${mnt}`, "cmd");
                 cmd(["btrfs", "scrub", "cancel", mnt])
                   .then((o) => {
-                    termLog(mnt, `Scrub canceled: ${o}`, "warn");
+                    termLog(mnt, `Health check canceled: ${o}`, "warn");
                     if (activeScrubTimers[mnt]) {
                       clearInterval(activeScrubTimers[mnt]);
                       delete activeScrubTimers[mnt];
                     }
                     if (scrubBtn) {
-                      scrubBtn.innerText = "Scrub";
+                      scrubBtn.innerText = "Verify & Repair";
                       scrubBtn.classList.remove("btn-danger");
                       scrubBtn.classList.add("btn-primary");
                       scrubBtn.removeAttribute("data-running");
                     }
                     setTermStatus(mnt, "Canceled", false);
                   })
-                  .catch((err) => termLog(mnt, `Error canceling scrub: ${err.message}`, "err"));
+                  .catch((err) => termLog(mnt, `Error stopping health check: ${err.message}`, "err"));
               },
               true,
             );
@@ -359,14 +359,14 @@ document.addEventListener("DOMContentLoaded", () => {
           }
 
           customConfirm(
-            "Start Scrub",
-            `Start background data scrubbing on ${mnt} to verify checksums and detect data corruption?`,
-            "Start Scrub",
+            "Verify and Repair Files",
+            `Check all files on ${mnt} for corruption and repair them automatically? This scan runs safely in the background while the storage is in use.`,
+            "Start Check",
             () => {
               termLog(mnt, `btrfs scrub start ${mnt}`, "cmd");
-              setTermStatus(mnt, "Scrubbing...", true);
+              setTermStatus(mnt, "Checking...", true);
               if (scrubBtn) {
-                scrubBtn.innerText = "Cancel Scrub";
+                scrubBtn.innerText = "Stop Check";
                 scrubBtn.classList.remove("btn-primary");
                 scrubBtn.classList.add("btn-danger");
                 scrubBtn.setAttribute("data-running", "true");
@@ -374,14 +374,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
               cmd(["btrfs", "scrub", "start", mnt])
                 .then(() => {
-                  termLog(mnt, `> Scrub process initiated. Monitoring live progress...`, "status");
+                  termLog(mnt, `> File health check initiated. Scanning in background...`, "status");
                   startScrubMonitor(mnt);
                 })
                 .catch((err) => {
-                  termLog(mnt, `Scrub start failed: ${err.message}`, "err");
+                  termLog(mnt, `Health check failed to start: ${err.message}`, "err");
                   setTermStatus(mnt, "Error", false);
                   if (scrubBtn) {
-                    scrubBtn.innerText = "Scrub";
+                    scrubBtn.innerText = "Verify & Repair";
                     scrubBtn.classList.remove("btn-danger");
                     scrubBtn.classList.add("btn-primary");
                     scrubBtn.removeAttribute("data-running");
@@ -396,7 +396,7 @@ document.addEventListener("DOMContentLoaded", () => {
           termLog(mnt, `btrfs scrub status ${mnt}`, "cmd");
           cmd(["btrfs", "scrub", "status", mnt])
             .then((o) => termLog(mnt, o))
-            .catch((err) => termLog(mnt, `Error reading scrub: ${err.message}`, "err"));
+            .catch((err) => termLog(mnt, `Error reading status: ${err.message}`, "err"));
           break;
         }
 
@@ -407,27 +407,27 @@ document.addEventListener("DOMContentLoaded", () => {
 
           if (isRunning) {
             customConfirm(
-              "Cancel Balance",
-              `Cancel active balance operation on ${mnt}?`,
-              "Cancel Balance",
+              "Stop Storage Optimization",
+              `Stop active storage optimization on ${mnt}?`,
+              "Stop Optimization",
               () => {
                 termLog(mnt, `btrfs balance cancel ${mnt}`, "cmd");
                 cmd(["btrfs", "balance", "cancel", mnt])
                   .then((o) => {
-                    termLog(mnt, `Balance canceled: ${o}`, "warn");
+                    termLog(mnt, `Optimization canceled: ${o}`, "warn");
                     if (activeBalanceTimers[mnt]) {
                       clearInterval(activeBalanceTimers[mnt]);
                       delete activeBalanceTimers[mnt];
                     }
                     if (balBtn) {
-                      balBtn.innerText = "Balance";
+                      balBtn.innerText = "Optimize Space";
                       balBtn.classList.remove("btn-danger");
                       balBtn.classList.add("btn-secondary");
                       balBtn.removeAttribute("data-running");
                     }
                     setTermStatus(mnt, "Canceled", false);
                   })
-                  .catch((err) => termLog(mnt, `Error canceling balance: ${err.message}`, "err"));
+                  .catch((err) => termLog(mnt, `Error stopping optimization: ${err.message}`, "err"));
               },
               true,
             );
@@ -435,14 +435,14 @@ document.addEventListener("DOMContentLoaded", () => {
           }
 
           customConfirm(
-            "Start Balance",
-            `Rebalance data & metadata chunks on ${mnt} (filters: -dusage=50 -musage=50)?`,
-            "Start Balance",
+            "Optimize Storage Space",
+            `Reorganize and compact storage space on ${mnt}? This safely frees up unused space and balances drive usage in the background without interrupting your access.`,
+            "Start Optimization",
             () => {
               termLog(mnt, `btrfs balance start --background -dusage=50 -musage=50 ${mnt}`, "cmd");
-              setTermStatus(mnt, "Balancing...", true);
+              setTermStatus(mnt, "Optimizing...", true);
               if (balBtn) {
-                balBtn.innerText = "Cancel Balance";
+                balBtn.innerText = "Stop Optimization";
                 balBtn.classList.remove("btn-secondary");
                 balBtn.classList.add("btn-danger");
                 balBtn.setAttribute("data-running", "true");
@@ -450,14 +450,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
               cmd(["btrfs", "balance", "start", "--background", "-dusage=50", "-musage=50", mnt])
                 .then((out) => {
-                  termLog(mnt, out || "Balance initiated in background. Monitoring progress...", "status");
+                  termLog(mnt, out || "Storage optimization running in background...", "status");
                   startBalanceMonitor(mnt);
                 })
                 .catch((err) => {
-                  termLog(mnt, `Balance failed: ${err.message}`, "err");
+                  termLog(mnt, `Optimization failed: ${err.message}`, "err");
                   setTermStatus(mnt, "Error", false);
                   if (balBtn) {
-                    balBtn.innerText = "Balance";
+                    balBtn.innerText = "Optimize Space";
                     balBtn.classList.remove("btn-danger");
                     balBtn.classList.add("btn-secondary");
                     balBtn.removeAttribute("data-running");
@@ -470,9 +470,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         case "defrag": {
           customConfirm(
-            "Defragment Volume",
-            `Run recursive defragmentation on ${mnt}?`,
-            "Start Defrag",
+            "Defragment Files",
+            `Defragment files on ${mnt}? This organizes fragmented files to improve read and write speeds.`,
+            "Start Defragmentation",
             () => {
               termLog(mnt, `btrfs filesystem defragment -r -v ${mnt}`, "cmd");
               setTermStatus(mnt, "Defragging...", true);
@@ -513,9 +513,9 @@ fi
           termLog(mnt, `btrfs device stats -T ${mnt}`, "cmd");
           cmd(["btrfs", "device", "stats", "-T", mnt])
             .then((out) => {
-              termLog(mnt, `[Device Health & I/O Stats]\n${out}`, "status");
+              termLog(mnt, `[Physical Drive Diagnostics]\n${out}`, "status");
             })
-            .catch((err) => termLog(mnt, `Stats error: ${err.message}`, "err"));
+            .catch((err) => termLog(mnt, `Diagnostics error: ${err.message}`, "err"));
           break;
         }
 
@@ -528,20 +528,20 @@ fi
 
         case "remove-missing-dev": {
           customConfirm(
-            "Remove Missing Device",
-            `Evacuate and permanently remove the missing / disconnected block device from ${mnt}?\n\nCommand: btrfs device remove missing ${mnt}`,
-            "Remove Missing Device",
+            "Remove Missing Drive",
+            `Safely remove the disconnected or missing drive from ${mnt} and update the storage pool?`,
+            "Remove Drive",
             () => {
               termLog(mnt, `btrfs device remove missing ${mnt}`, "cmd");
               setTermStatus(mnt, "Removing...", true);
               cmd(["btrfs", "device", "remove", "missing", mnt])
                 .then((o) => {
-                  termLog(mnt, `Missing device removed successfully:\n${o}`, "success");
+                  termLog(mnt, `Missing drive removed successfully:\n${o}`, "success");
                   setTermStatus(mnt, "Idle", false);
                   App.fetch();
                 })
                 .catch((err) => {
-                  termLog(mnt, `Device removal error: ${err.message}`, "err");
+                  termLog(mnt, `Drive removal error: ${err.message}`, "err");
                   setTermStatus(mnt, "Error", false);
                 });
             },
@@ -552,17 +552,17 @@ fi
 
         case "remove-dev":
           customConfirm(
-            "Remove Device",
-            `Evacuate and remove ${tgt.getAttribute("data-devpath")}?`,
-            "Remove Device",
+            "Remove Drive",
+            `Safely move data off ${tgt.getAttribute("data-devpath")} and remove it from ${mnt}?`,
+            "Remove Drive",
             () => {
               termLog(mnt, `btrfs device remove ${tgt.getAttribute("data-devpath")} ${mnt}`, "cmd");
               cmd(["btrfs", "device", "remove", tgt.getAttribute("data-devpath"), mnt])
                 .then((o) => {
-                  termLog(mnt, `Device removed successfully:\n${o}`, "success");
+                  termLog(mnt, `Drive removed successfully:\n${o}`, "success");
                   App.fetch();
                 })
-                .catch((err) => termLog(mnt, `Device removal error: ${err.message}`, "err"));
+                .catch((err) => termLog(mnt, `Drive removal error: ${err.message}`, "err"));
             },
             true,
           );
@@ -575,17 +575,17 @@ fi
           $("btn-confirm-add-dev").setAttribute("data-mount", mnt);
           $("btn-confirm-add-dev").disabled = true;
           $("modal-disk-select").innerHTML =
-            `<option value="">Scanning for empty block devices...</option>`;
+            `<option value="">Scanning for available drives...</option>`;
           getEmptyDevices()
             .then((devs) => {
               if (devs.length === 0)
                 $("modal-disk-select").innerHTML =
-                  `<option value="">No safe empty disks found!</option>`;
+                  `<option value="">No available empty drives found.</option>`;
               else {
                 $("modal-disk-select").innerHTML = devs
                   .map(
                     (d) =>
-                      `<option value="/dev/${d.name}">/dev/${d.name} (${d.size} - Unallocated)</option>`,
+                      `<option value="${d.path}">${d.path} (${d.size} - Available)</option>`,
                   )
                   .join("");
                 $("btn-confirm-add-dev").disabled = false;
@@ -604,16 +604,16 @@ fi
           const label = tgt.getAttribute("data-label") || "Volume";
           const devs = tgt.getAttribute("data-devs") || "";
 
-          if (mount === "/" || label.toLowerCase().includes("root")) {
-            customAlert("Protected", "Cannot destroy system root volume.");
+          if (mount === "/") {
+            customAlert("Protected System Drive", "Cannot delete the operating system root storage pool.");
             return;
           }
 
           $("destroy-vol-name").innerText = `${label} (${uuid})`;
-          $("destroy-vol-devs").innerText = devs || "Member disks";
+          $("destroy-vol-devs").innerText = devs || "Member drives";
 
           const expectedText =
-            label && label !== "System/Root (No Label)" ? label : "DELETE";
+            label && !label.startsWith("Storage Pool (") ? label : "DELETE";
           $("destroy-vol-expected-text").innerText = expectedText;
 
           const confirmInput = $("destroy-vol-confirm-input");
@@ -633,16 +633,16 @@ fi
 
         case "clean-orphaned-snaps":
           if (!App.orphanedSnaps || App.orphanedSnaps.length === 0) {
-            customAlert("Notice", "No orphaned snapshot schedules found.");
+            customAlert("Notice", "No stale backup schedules found.");
             return;
           }
           const orphanNames = App.orphanedSnaps
             .map((o) => `• ${o.cfg} (Target: ${o.subvol || "Missing"})`)
             .join("\n");
           customConfirm(
-            "Clean Broken Snapshot Schedules",
-            `The following Snapper snapshot schedules belong to volumes that have been deleted or formatted outside BTRFS Manager:\n\n${orphanNames}\n\nRemove these broken configurations so they do not cause errors on active volumes?`,
-            "Clean Up",
+            "Remove Stale Backup Schedules",
+            `The following automatic backup schedules belong to drives or folders that have been deleted or removed:\n\n${orphanNames}\n\nRemove these stale schedules to keep the backup service running smoothly?`,
+            "Remove Schedules",
             () => {
               const script = `
 CFG_LIST="$1"
@@ -665,7 +665,7 @@ echo "Cleaned"
                 .then(() => {
                   customAlert(
                     "Success",
-                    "All broken snapshot schedules have been removed cleanly.",
+                    "All stale backup schedules have been removed cleanly.",
                   );
                   App.orphanedSnaps = [];
                   App.renderOrphanBanner();
@@ -674,7 +674,7 @@ echo "Cleaned"
                 .catch((err) =>
                   customAlert(
                     "Error",
-                    "Failed to clean schedules: " + err.message,
+                    "Failed to remove schedules: " + err.message,
                   ),
                 );
             },
@@ -715,16 +715,16 @@ fi`;
             }
             const targetName = p ? `/${p}` : (mnt === "/" ? "Root Volume" : mnt);
             customSelect(
-              "Snapper Integration",
-              `Select Snapper timeline schedule for ${targetName}:`,
+              "Automatic Backups",
+              `Choose how often to take automatic backups for ${targetName}:`,
               [
                 {
                   v: "disable",
-                  l: "Disable Snapper Timeline (Delete Configuration)",
+                  l: "Turn Off Automatic Backups",
                 },
-                { v: "hourly", l: "Hourly Timeline (Hourly + Daily retention)" },
-                { v: "daily", l: "Daily Timeline (Daily retention)" },
-                { v: "weekly", l: "Weekly Timeline (Weekly retention)" },
+                { v: "hourly", l: "Hourly Backups (Keeps hourly and daily backups)" },
+                { v: "daily", l: "Daily Backups (Keeps daily backups)" },
+                { v: "weekly", l: "Weekly Backups (Keeps weekly backups)" },
               ],
               "Next",
               (freq) => {
@@ -761,9 +761,9 @@ if [ -n "$CFG_NAME" ] && [ "$CFG_NAME" != "Config" ]; then
             sed -i -E "s/\\b$CFG_NAME\\b//g; s/\"[[:space:]]+/\"/; s/[[:space:]]+\"/\"/; s/[[:space:]]+/ /g" "$f" 2>/dev/null || true
         fi
     done
-    echo "Snapper configuration '$CFG_NAME' disabled and deleted successfully."
+    echo "Automatic backups turned off and deleted successfully."
 else
-    echo "No active Snapper config found for $TARGET, nothing to delete."
+    echo "No active backup configuration found for $TARGET."
 fi
 `;
                   cmd(["sh", "-c", bashScript, "--", targetDir])
@@ -775,15 +775,15 @@ fi
                 } else {
                   setTimeout(() => {
                     customPrompt(
-                      "Snapper Retention Limit",
-                      "How many recent snapshots do you want Snapper to keep?",
+                      "Backup Retention Limit",
+                      "How many recent backups do you want to keep?",
                       "5",
-                      "Apply to Snapper",
+                      "Apply Schedule",
                       (limitStr) => {
                         if (!limitStr) return;
                         const limit = parseInt(limitStr, 10);
                         if (isNaN(limit) || limit < 1) {
-                          customAlert("Error", "Invalid retention limit.");
+                          customAlert("Error", "Please enter a valid number of backups to keep.");
                           return;
                         }
 
@@ -802,7 +802,7 @@ if [ -z "$CFG_NAME" ] || [ "$CFG_NAME" = "Config" ]; then
     else
         CFG_NAME="vol_$(basename "$MNT_PT" | tr -dc 'a-zA-Z0-9')"
     fi
-    snapper -c "$CFG_NAME" create-config "$MNT_PT" || { echo "ERROR: Failed to create snapper config for $MNT_PT."; exit 1; }
+    snapper -c "$CFG_NAME" create-config "$MNT_PT" || { echo "ERROR: Failed to create backup config for $MNT_PT."; exit 1; }
 fi
 
 H=0; D=0; W=0
@@ -814,7 +814,7 @@ snapper -c "$CFG_NAME" set-config TIMELINE_CREATE=yes TIMELINE_LIMIT_HOURLY="$H"
 
 systemctl enable --now snapper-timeline.timer snapper-cleanup.timer >/dev/null 2>&1 || true
 
-printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRetention Limit: %s\\n" "$CFG_NAME" "$FREQ" "$LIMIT"
+printf "Automatic backups configured successfully!\\nFrequency: %s\\nRetention Limit: %s backups\\n" "$FREQ" "$LIMIT"
 `;
                         cmd([
                           "sh",
@@ -826,7 +826,7 @@ printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRet
                           limitStr,
                         ])
                           .then((out) => {
-                            customAlert("Success", out);
+                            customAlert("Backups Configured", out);
                             App.fetch();
                           })
                           .catch((e) => customAlert("Error", e.message));
@@ -840,7 +840,7 @@ printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRet
             const rawNm = $(`new-subvol-${i}`)?.value.trim();
             const nm = rawNm ? rawNm.replace(/[^a-zA-Z0-9._-]/g, "") : "";
             if (!nm || nm === "." || nm === "..") {
-              customAlert("Error", "Valid subvolume name required (letters, numbers, dashes, underscores).");
+              customAlert("Error", "Please enter a valid folder name (letters, numbers, dashes, underscores).");
               return;
             }
             cmd([
@@ -863,7 +863,7 @@ printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRet
             if (isSnapshotContainer) {
               customAlert(
                 "Protected Snapshot Storage",
-                "Cannot delete the parent snapshot storage directory.",
+                "Cannot delete the parent snapshot storage folder.",
               );
               return;
             }
@@ -881,15 +881,15 @@ printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRet
 
             if (isProtected) {
               customAlert(
-                "Protected Active Subvolume",
-                `This subvolume is currently mounted on "${mountedAt || "/"}" (or configured in /etc/fstab) and cannot be deleted while active on the system.`,
+                "Active System Folder",
+                `This subvolume is currently mounted at "${mountedAt || "/"}" (or in /etc/fstab) and cannot be deleted while active.`,
               );
               return;
             }
 
             customConfirm(
               "Delete Subvolume / Snapshot",
-              `Delete "${p}"? All files inside will be permanently deleted.`,
+              `Are you sure you want to permanently delete "${p}"? All files inside will be permanently erased.`,
               "Delete",
               () => {
                 const script = `
@@ -981,15 +981,15 @@ fi
             const snapBase = p.split("/").pop();
             const defaultCloneName = `${snapBase}_restored`;
             customPrompt(
-              "Restore / Clone Snapshot",
-              "Enter a name for the new subvolume (will be created as read-write):",
+              "Restore Snapshot as Writable",
+              "Enter a name for the restored folder (will be created with normal read-write access):",
               defaultCloneName,
-              "Clone Subvolume",
+              "Restore Folder",
               (newSubvolName) => {
                 if (!newSubvolName) return;
                 const cleanSubvol = newSubvolName.trim().replace(/[^a-zA-Z0-9._-]/g, "");
                 if (!cleanSubvol) {
-                  customAlert("Error", "Valid subvolume name required (letters, numbers, dashes, underscores).");
+                  customAlert("Error", "Please enter a valid folder name (letters, numbers, dashes, underscores).");
                   return;
                 }
                 const script = `
@@ -1054,18 +1054,18 @@ fi
 `;
                 cmd(["sh", "-c", script, "--", mnt, p, cleanSubvol])
                   .then((out) => {
-                    customAlert("Restore / Clone Success", out);
+                    customAlert("Restore Successful", out);
                     App.fetchSubvols(mnt, i || tgt.getAttribute("data-index"));
                   })
-                  .catch((e) => customAlert("Clone Failed", e.message));
+                  .catch((e) => customAlert("Restore Failed", e.message));
               },
             );
           } else if (op === "toggle-ro") {
             const targetRo = tgt.getAttribute("data-ro") === "true";
-            const actionWord = targetRo ? "Lock as Read-Only" : "Unlock as Read-Write";
+            const actionWord = targetRo ? "Protect as Read-Only" : "Make Writable";
             customConfirm(
               `${actionWord}`,
-              `Change permissions for "/${p}" to ${targetRo ? "Read-Only (write-protected)" : "Read-Write"}?`,
+              `Change "/${p}" to ${targetRo ? "Read-Only to prevent files from being modified or deleted" : "Writable to allow file changes"}?`,
               actionWord,
               () => {
                 const script = `
@@ -1119,22 +1119,22 @@ exit $RES
             );
           } else if (op.startsWith("snap")) {
             const snapPromptTitle = p
-              ? `Snapshot Subvolume (/${p})`
+              ? `Take Snapshot (/${p})`
               : mnt === "/"
-                ? "Snapshot Root (/)"
-                : `Snapshot Volume (${mnt})`;
+                ? "Take System Snapshot (/)"
+                : `Take Pool Snapshot (${mnt})`;
             customPrompt(
               snapPromptTitle,
-              "Snapshot Name:",
+              "Backup Name:",
               sName(
                 new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19),
               ),
-              "Create Snapshot",
+              "Take Snapshot",
               (n) => {
                 if (!n) return;
                 const cleanName = n.trim().replace(/[^a-zA-Z0-9._-]/g, "");
                 if (!cleanName) {
-                  customAlert("Error", "Valid snapshot name required (letters, numbers, dashes, underscores).");
+                  customAlert("Error", "Please enter a valid backup name (letters, numbers, dashes, underscores).");
                   return;
                 }
                 const script = `
@@ -1249,15 +1249,15 @@ fi
           } else if (op === "disable-cow" || op === "enable-cow") {
             const isDisable = op === "disable-cow";
             const flag = isDisable ? "+C" : "-C";
-            const actionWord = isDisable ? "Disable" : "Enable";
+            const actionWord = isDisable ? "Turn Off CoW (High-Speed Mode)" : "Turn On CoW (Data Protection)";
             const noteMsg = isDisable
-              ? "Note: Disabling CoW (No_COW) is highly recommended for database folders or VM image directories. It will only apply to *new* files created inside this subvolume going forward."
-              : "Note: Re-enabling CoW allows BTRFS to securely snapshot and checksum future files.";
+              ? "Turning off Copy-on-Write (NoCoW) improves performance for database files and virtual machines. This will apply to all new files created in this folder."
+              : "Turning on Copy-on-Write provides automatic corruption detection, checksums, and instant snapshotting for future files.";
 
             customConfirm(
-              `${actionWord} CoW`,
-              `${actionWord} Copy-on-Write for "/${p}"?\n\n${noteMsg}`,
-              actionWord,
+              `${actionWord}`,
+              `${isDisable ? "Turn off" : "Turn on"} Copy-on-Write for "/${p}"?\n\n${noteMsg}`,
+              isDisable ? "Turn Off CoW" : "Turn On CoW",
               () => {
                 const script = `
 MNT="$1"
@@ -1305,23 +1305,23 @@ exit $RES
                   .then(() => {
                     customAlert(
                       "Success",
-                      `CoW successfully ${isDisable ? "disabled" : "enabled"} for /${p}`,
+                      `Copy-on-Write successfully ${isDisable ? "disabled" : "enabled"} for /${p}`,
                     );
                     App.fetchSubvols(mnt, i);
                   })
                   .catch((e) =>
                     customAlert(
                       "Error",
-                      "Failed to modify CoW attributes: " + e.message,
+                      "Failed to modify folder attributes: " + e.message,
                     ),
                   );
               },
             );
           } else if (op === "purge-snaps") {
             customConfirm(
-              "Purge Old Snapshots",
-              "Purge all old snapshots that exceed Snapper / timeline retention policies?",
-              "Purge Now",
+              "Clean Up Old Backups",
+              "Remove older automatic snapshots that exceed your backup retention limit to free up storage space?",
+              "Clean Up Now",
               () => {
                 const bashScript = `
 TARGET="$1"
@@ -1330,12 +1330,12 @@ if command -v snapper >/dev/null 2>&1; then
     if [ -n "$CFG" ] && [ "$CFG" != "Config" ]; then
         snapper -c "$CFG" cleanup timeline
         snapper -c "$CFG" cleanup number
-        echo "Snapper cleanup completed."
+        echo "Old backups cleaned up successfully."
     else
-        echo "No Snapper config found for this volume."
+        echo "No backup configuration found for this storage pool."
     fi
 else
-    echo "Snapper not installed."
+    echo "Backup utility (Snapper) is not installed."
 fi
 `;
                 termLog(mnt, `snapper cleanup timeline on ${mnt}`, "cmd");
@@ -1397,10 +1397,10 @@ fi
           devs
             .map(
               (d) =>
-                `<label class="disk-label-item"><input type="checkbox" name="tgt-disk" value="/dev/${d.name}"> <span class="btrfs-code">/dev/${d.name}</span> - Capacity: ${d.size}</label>`,
+                `<label class="disk-label-item"><input type="checkbox" name="tgt-disk" value="${d.path}"> <span class="btrfs-code">${d.path}</span> - Size: ${d.size}</label>`,
             )
             .join("") ||
-          "<span class='text-danger'>No safe empty disks found.</span>";
+          "<span class='text-danger'>No available empty drives found.</span>";
         $("btn-execute-format").disabled = !devs.length;
       })
       .catch(
@@ -1497,18 +1497,18 @@ echo "DELETED"
 
     cmd(["sh", "-c", script, "--", mount, uuid, devs])
       .then(() => {
-        cmd(["sh", "-c", `grep -qs -E "${uuid}|${mount}" /etc/fstab && echo "YES" || echo "NO"`])
+        cmd(["sh", "-c", 'grep -qs -E "$1|$2" /etc/fstab && echo "YES" || echo "NO"', "--", uuid, mount])
           .then((fstabCheck) => {
             const hasFstab = (fstabCheck || "").trim() === "YES";
             if (hasFstab) {
               customAlert(
-                "Volume Destroyed - Notice: /etc/fstab",
-                "The BTRFS volume and member disk signatures were successfully wiped.\n\nIMPORTANT WARNING: An entry matching this volume is still in /etc/fstab. Remember to remove or comment out this entry in /etc/fstab before restarting your system to prevent boot errors.",
+                "Storage Pool Deleted - Notice",
+                "The storage pool was deleted and member drives were wiped.\n\nImportant: An entry matching this storage pool was detected in /etc/fstab. Remember to remove or comment out this entry in /etc/fstab before rebooting to prevent boot delays.",
               );
             } else {
               customAlert(
-                "Volume Destroyed",
-                "The BTRFS volume and all associated snapshot schedules have been removed cleanly. Target member disks have been wiped and are now unallocated.",
+                "Storage Pool Deleted",
+                "The storage pool and all its automatic backup schedules were removed cleanly. Member drives have been wiped clean and are now available.",
               );
             }
             $("view-detail").classList.add("hidden-element");
@@ -1517,7 +1517,7 @@ echo "DELETED"
             App.fetch();
           })
           .catch(() => {
-            customAlert("Volume Destroyed", "The BTRFS volume has been removed cleanly.");
+            customAlert("Storage Pool Deleted", "The storage pool has been removed cleanly.");
             $("view-detail").classList.add("hidden-element");
             $("view-master").classList.remove("hidden-element");
             $("detail-container").setAttribute("data-active-index", "");
@@ -1525,7 +1525,7 @@ echo "DELETED"
           });
       })
       .catch((err) => {
-        customAlert("Error Destroying Volume", err.message);
+        customAlert("Error Deleting Pool", err.message);
         App.fetch();
       });
   });
@@ -1543,42 +1543,42 @@ echo "DELETED"
     const lbl = $("volume-label").value.trim();
     if (!disks.length)
       return (
-        ($("format-status").innerText = "Error: No disks selected!"),
+        ($("format-status").innerText = "Error: Please select at least one drive!"),
         $("format-status").classList.remove("hidden-element"),
         ($("format-status").style.color = "var(--btn-danger)")
       );
 
     if ((prof === "raid0" || prof === "raid1") && disks.length < 2) {
       customAlert(
-        "Insufficient Disks",
-        `The ${prof.toUpperCase()} profile requires at least 2 disks. You selected ${disks.length}.`,
+        "More Drives Needed",
+        `The ${prof.toUpperCase()} profile requires at least 2 drives. You selected ${disks.length}.`,
       );
       return;
     }
     if (prof === "raid10" && disks.length < 4) {
       customAlert(
-        "Insufficient Disks",
-        `The RAID 10 profile requires at least 4 disks. You selected ${disks.length}.`,
+        "More Drives Needed",
+        `The RAID 10 profile requires at least 4 drives. You selected ${disks.length}.`,
       );
       return;
     }
 
     customConfirm(
-      "Confirm Format & Pool Creation",
-      `Are you sure you want to format ${disks.length} device(s) into a new BTRFS pool (${prof.toUpperCase()})?\n\nTarget devices: ${disks.join(", ")}\n\nWARNING: All existing data on these disks will be PERMANENTLY ERASED.`,
-      "Format & Create",
+      "Format Drives & Create Storage Pool",
+      `Are you sure you want to format ${disks.length} drive(s) into a new storage pool (${prof.toUpperCase()})?\n\nSelected drives: ${disks.join(", ")}\n\nWARNING: All files on these drives will be permanently erased.`,
+      "Format & Create Pool",
       () => {
         let c = ["mkfs.btrfs", "-d", prof, "-m", prof, "-f"];
         if (lbl) c.push("-L", lbl);
         c.push(...disks);
         $("format-status").classList.remove("hidden-element");
         $("format-status").style.color = "var(--btn-primary)";
-        $("format-status").innerText = "> Formatting...";
+        $("format-status").innerText = "> Formatting drives and creating storage pool...";
         $("btn-execute-format").disabled = true;
         cmd(c)
           .then(() => {
             $("format-status").style.color = "var(--console-text)";
-            $("format-status").innerText = "Success! Volume Formatted.";
+            $("format-status").innerText = "Success! Storage pool created successfully.";
             App.fetch();
             setTimeout(() => {
               $("raid-form").classList.add("hidden-element");
@@ -1587,7 +1587,7 @@ echo "DELETED"
           })
           .catch((e) => {
             $("format-status").style.color = "var(--btn-danger)";
-            $("format-status").innerText = "Failed:\n" + e.message;
+            $("format-status").innerText = "Creation failed:\n" + e.message;
             $("btn-execute-format").disabled = false;
           });
       },

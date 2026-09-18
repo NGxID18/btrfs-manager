@@ -37,27 +37,28 @@
         id="raid-form"
         class="btrfs-card raid-form-card hidden-element"
       >
-        <h3>Create New BTRFS Pool</h3>
+        <h3>Create New Storage Pool</h3>
         <div class="form-group">
-          <p class="form-label-block">1. Target Block Devices:</p>
+          <p class="form-label-block">1. Select Drives to Include:</p>
           <div id="available-disks" class="available-disks-box">
-            Scanning block devices...
+            Scanning for available drives...
           </div>
         </div>
         <div class="form-group">
-          <p class="form-label-block">2. Data Profile (RAID Level):</p>
-          <label for="raid-profile" class="form-label">Data Profile:</label>
+          <p class="form-label-block">2. Data Protection Level:</p>
+          <label for="raid-profile" class="form-label">Protection Level:</label>
           <select id="raid-profile" class="form-input">
-            <option value="single">Single (1 Disk)</option>
-            <option value="raid1">RAID 1 (Mirror - Min 2 Disks)</option>
-            <option value="raid0">RAID 0 (Stripe - Min 2 Disks)</option>
+            <option value="single">Single (1 Drive - Standard storage)</option>
+            <option value="dup">DUP (1 Drive - Duplicate safety copy on same drive)</option>
+            <option value="raid1">RAID 1 Mirror (Min 2 Drives - Mirrored copy for safety)</option>
+            <option value="raid0">RAID 0 Stripe (Min 2 Drives - Maximum speed, no backup)</option>
             <option value="raid10">
-              RAID 10 (Stripe+Mirror - Min 4 Disks)
+              RAID 10 (Min 4 Drives - High speed and mirrored safety)
             </option>
           </select>
         </div>
         <div class="form-group">
-          <label for="volume-label" class="form-label">Pool Label:</label>
+          <label for="volume-label" class="form-label">Pool Name:</label>
           <input
             type="text"
             id="volume-label"
@@ -67,7 +68,7 @@
         </div>
         <div class="form-actions">
           <button class="btn btn-primary" id="btn-execute-format">
-            Format & Create Pool
+            Format Drives & Create Pool
           </button>
           <button class="btn btn-secondary" id="btn-cancel-format">
             Cancel
@@ -96,24 +97,24 @@
 
     <div id="add-dev-modal" class="modal-overlay hidden-element">
       <div class="modal-content">
-        <h3>Add Device to Volume</h3>
+        <h3>Add Drive to Storage Pool</h3>
         <p>
-          Select an empty disk to merge into:
+          Select an available drive to add to:
           <strong id="modal-mount-target" class="text-primary"></strong>
         </p>
         <div class="form-group mt-15">
           <select id="modal-disk-select" class="form-input w-100"></select>
         </div>
         <div class="warning-box mb-15 text-danger">
-          <strong>Warning:</strong> All existing data and partitions on the
-          selected disk will be permanently wiped!
+          <strong>Warning:</strong> All files and partitions on the
+          selected drive will be permanently erased!
         </div>
         <div class="modal-actions">
           <button class="btn btn-secondary" id="btn-close-add-modal">
             Cancel
           </button>
           <button class="btn btn-primary" id="btn-confirm-add-dev" disabled>
-            Add Disk
+            Add Drive
           </button>
         </div>
       </div>
@@ -121,17 +122,17 @@
 
     <div id="destroy-vol-modal" class="modal-overlay hidden-element">
       <div class="modal-content modal-content-danger">
-        <h3 class="text-danger">Destroy BTRFS Volume</h3>
+        <h3 class="text-danger">Permanently Delete Storage Pool</h3>
         <p class="mb-10">
-          You are about to permanently destroy volume: <strong id="destroy-vol-name" class="text-primary"></strong>
+          You are about to delete storage pool: <strong id="destroy-vol-name" class="text-primary"></strong>
         </p>
         <div class="warning-box mb-15 text-danger">
           <strong>CRITICAL WARNING:</strong>
           <ul class="danger-list">
-            <li>All files, subvolumes, and data will be <strong>permanently erased</strong>.</li>
-            <li>All associated Snapper timeline & Cron snapshot schedules will be <strong>automatically cleaned up</strong>.</li>
+            <li>All files, subfolders, and data will be <strong>permanently deleted</strong>.</li>
+            <li>All automatic backup schedules will be <strong>removed</strong>.</li>
             <li>Active mount points will be <strong>unmounted</strong>.</li>
-            <li>Filesystem signatures on target disks (<span id="destroy-vol-devs" class="btrfs-code"></span>) will be <strong>wiped</strong> (<span class="btrfs-code">wipefs</span>).</li>
+            <li>Member drives (<span id="destroy-vol-devs" class="btrfs-code"></span>) will be <strong>wiped clean</strong>.</li>
           </ul>
         </div>
         <div class="form-group mb-15">
@@ -151,7 +152,7 @@
             Cancel
           </button>
           <button class="btn btn-danger" id="btn-execute-destroy-vol" disabled>
-            Permanently Destroy Volume
+            Permanently Delete Pool
           </button>
         </div>
       </div>

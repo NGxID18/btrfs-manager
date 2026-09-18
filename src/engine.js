@@ -122,7 +122,7 @@ window.App = {
           label:
             mLabel && (mLabel[1] || mLabel[2]) !== "none"
               ? mLabel[1] || mLabel[2]
-              : "System/Root (No Label)",
+              : `Storage Pool (${uuid.slice(0, 8)})`,
           uuid,
           mountPoint,
           devs,
@@ -214,24 +214,24 @@ fi
     const itemsHtml = this.orphanedSnaps
       .map(
         (o) =>
-          `<li><strong>${o.cfg}</strong> (target mount: <span class="btrfs-code">${o.subvol || "Missing"}</span>)</li>`,
+          `<li><strong>${escapeHtml(o.cfg)}</strong> (Target folder: <span class="btrfs-code">${escapeHtml(o.subvol || "Missing")}</span>)</li>`,
       )
       .join("");
     el.innerHTML = `
       <div class="orphan-snap-content">
         <div class="orphan-snap-title">
-          <span>⚠️ Broken / Orphaned Snapshot Schedules Detected</span>
+          <span>⚠️ Stale Backup Schedules Found</span>
           <span class="orphan-badge">${count} Stale ${count === 1 ? "Schedule" : "Schedules"}</span>
         </div>
         <div class="orphan-snap-desc">
-          The following Snapper snapshot schedules point to filesystems that were deleted or formatted outside BTRFS Manager. When the hourly snapshot timer runs, this causes snapshot errors that <strong>can prevent snapshotting other healthy volumes</strong> (like root or home):
+          The following automatic backup schedules point to folders or drives that no longer exist. Removing them will prevent backup errors and keep other backups running normally:
         </div>
         <ul class="danger-list orphan-item-list">
           ${itemsHtml}
         </ul>
       </div>
       <div class="orphan-snap-actions">
-        <button class="btn btn-danger btn-sm btn-action" data-action="clean-orphaned-snaps">Clean Broken Schedules Now</button>
+        <button class="btn btn-danger btn-sm btn-action" data-action="clean-orphaned-snaps">Remove Stale Schedules</button>
       </div>
     `;
     el.classList.remove("hidden-element");
@@ -261,11 +261,11 @@ if command -v snapper >/dev/null 2>&1; then
             D=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_DAILY"{print $3}')
             W=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_WEEKLY"{print $3}')
             M=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_MONTHLY"{print $3}')
-            if [ "$H" != "0" ] && [ -n "$H" ]; then STATUS="Hourly (Max $H Snaps via Snapper)"
-            elif [ "$D" != "0" ] && [ -n "$D" ]; then STATUS="Daily (Max $D Snaps via Snapper)"
-            elif [ "$W" != "0" ] && [ -n "$W" ]; then STATUS="Weekly (Max $W Snaps via Snapper)"
-            elif [ "$M" != "0" ] && [ -n "$M" ]; then STATUS="Monthly (Max $M Snaps via Snapper)"
-            else STATUS="Enabled (via Snapper)"; fi
+            if [ "$H" != "0" ] && [ -n "$H" ]; then STATUS="Hourly (Keeps up to $H backups)"
+            elif [ "$D" != "0" ] && [ -n "$D" ]; then STATUS="Daily (Keeps up to $D backups)"
+            elif [ "$W" != "0" ] && [ -n "$W" ]; then STATUS="Weekly (Keeps up to $W backups)"
+            elif [ "$M" != "0" ] && [ -n "$M" ]; then STATUS="Monthly (Keeps up to $M backups)"
+            else STATUS="Enabled (Active)"; fi
         fi
     fi
 fi
@@ -275,9 +275,9 @@ if [ "$STATUS" = "Not Configured" ]; then
         FRQ=$(echo "$CRON" | awk -F'/' '{print $3}' | sed 's/cron\\.//' | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')
         LIM=$(grep "tail -n" "$CRON" | sed -E 's/.*tail -n \\+([0-9]+).*/\\1/')
         if [ -n "$LIM" ]; then
-            STATUS="$FRQ (Max $((LIM - 1)) Snaps via Native Cron)"
+            STATUS="$FRQ (Keeps up to $((LIM - 1)) backups)"
         else
-            STATUS="$FRQ (via Native Cron)"
+            STATUS="$FRQ (Automated)"
         fi
     fi
 fi
@@ -334,8 +334,8 @@ echo "$STATUS"
         v.totalDevErrors = totalDevErrors;
         v.healthHtml =
           totalDevErrors > 0
-            ? `<span class="text-danger fw-bold">⚠️ ${totalDevErrors} Hardware / IO Errors Detected!</span>`
-            : `<span class="text-success fw-bold">✓ Healthy (0 IO Errors)</span>`;
+            ? `<span class="text-danger fw-bold">⚠️ ${totalDevErrors} Disk Error(s) Detected!</span>`
+            : `<span class="text-success fw-bold">✓ Healthy (No Errors)</span>`;
 
         const dM = dfOut.match(/Data,\s*(.*?):/i),
           mM = dfOut.match(/Metadata,\s*(.*?):/i);
@@ -476,7 +476,6 @@ echo "$STATUS"
     );
     const isRoot =
       v.mountPoint === "/" ||
-      v.label.toLowerCase().includes("root") ||
       rootDevices.some((rd) =>
         v.devs.some(
           (d) => d.path === rd || rd.startsWith(d.path) || d.path.startsWith(rd),
@@ -498,26 +497,26 @@ echo "$STATUS"
             <div class="detail-layout-grid">
                 <div class="detail-left-col">
                     <div class="btrfs-card">
-                        <h4 class="section-title">Pool Information & Physical Devices</h4>
+                        <h4 class="section-title">Storage Pool Overview</h4>
                         <div class="spec-table mb-15">
-                            <div class="spec-row"><span class="spec-label">Hardware Profile</span><span class="spec-val text-primary fw-bold">${escapeHtml(v.hwList)}</span></div>
-                            <div class="spec-row"><span class="spec-label">Raw Capacity</span><span class="spec-val">${escapeHtml(v.rawSize)} <span class="text-muted">(Aggregated)</span></span></div>
-                            <div class="spec-row"><span class="spec-label">Usable Filesystem</span><span id="usable-display-${v.idx}" class="spec-val fw-bold">${v.usable}</span></div>
-                            <div class="spec-row"><span class="spec-label">Data RAID Level</span><span id="raid-display-${v.idx}" class="spec-val">${v.raid}</span></div>
-                            <div class="spec-row"><span class="spec-label">Auto-Snapshot</span><span id="snap-display-${v.idx}" class="spec-val fw-bold">${escapeHtml(v.snapStatus)}</span></div>
-                            <div class="spec-row"><span class="spec-label">Hardware Health</span><span id="health-display-${v.idx}" class="spec-val">${v.healthHtml || '<span class="text-success fw-bold">✓ Healthy (0 IO Errors)</span>'}</span></div>
-                            <div class="spec-row"><span class="spec-label">Mount Features</span><span id="opts-display-${v.idx}" class="spec-val">${v.mountOptsHtml || '<span class="text-muted">Standard</span>'}</span></div>
+                            <div class="spec-row"><span class="spec-label">Physical Hardware</span><span class="spec-val text-primary fw-bold">${escapeHtml(v.hwList)}</span></div>
+                            <div class="spec-row"><span class="spec-label">Total Drive Space</span><span class="spec-val">${escapeHtml(v.rawSize)}</span></div>
+                            <div class="spec-row"><span class="spec-label">Available Storage</span><span id="usable-display-${v.idx}" class="spec-val fw-bold">${v.usable}</span></div>
+                            <div class="spec-row"><span class="spec-label">Data Protection</span><span id="raid-display-${v.idx}" class="spec-val">${v.raid}</span></div>
+                            <div class="spec-row"><span class="spec-label">Automatic Backups</span><span id="snap-display-${v.idx}" class="spec-val fw-bold">${escapeHtml(v.snapStatus)}</span></div>
+                            <div class="spec-row"><span class="spec-label">Drive Health</span><span id="health-display-${v.idx}" class="spec-val">${v.healthHtml || '<span class="text-success fw-bold">✓ Healthy (No Errors)</span>'}</span></div>
+                            <div class="spec-row"><span class="spec-label">Active Features</span><span id="opts-display-${v.idx}" class="spec-val">${v.mountOptsHtml || '<span class="text-muted">Standard</span>'}</span></div>
                         </div>
-                        <h5 class="sub-section-title mt-20 mb-10">Block Devices</h5>
+                        <h5 class="sub-section-title mt-20 mb-10">Member Drives</h5>
                         <div class="table-scroll-container mb-15">
                             <table class="data-table">
                                 <thead>
                                     <tr>
-                                        <th>Device Node</th>
-                                        <th>ID</th>
+                                        <th>Drive Path</th>
+                                        <th>Device ID</th>
                                         <th>Capacity</th>
                                         <th>Health</th>
-                                        <th class="text-right">Action</th>
+                                        <th class="text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -525,38 +524,38 @@ echo "$STATUS"
                                 </tbody>
                             </table>
                         </div>
-                        ${v.mountPoint ? `<div class="advanced-topo-actions"><button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${escapeHtml(v.mountPoint)}">Add Device</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-raid" data-mount="${escapeHtml(v.mountPoint)}" data-index="${v.idx}">Convert RAID</button></div>` : ""}
+                        ${v.mountPoint ? `<div class="advanced-topo-actions"><button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${escapeHtml(v.mountPoint)}">Add Drive</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-raid" data-mount="${escapeHtml(v.mountPoint)}" data-index="${v.idx}">Change Protection</button></div>` : ""}
                     </div>
                     ${
                       v.mountPoint
                         ? `<div class="btrfs-card">
-                        <h4 class="section-title">Maintenance & Optimization</h4>
+                        <h4 class="section-title">Storage Optimization & Health</h4>
                         <div class="toolbar-actions mb-15">
-                            <button class="btn btn-primary btn-sm btn-action" id="btn-scrub-${boxSafe}" data-action="scrub" data-mount="${escapeHtml(v.mountPoint)}">Scrub</button> 
-                            <button class="btn btn-secondary btn-sm btn-action" id="btn-balance-${boxSafe}" data-action="balance" data-mount="${escapeHtml(v.mountPoint)}">Balance</button> 
-                            <button class="btn btn-secondary btn-sm btn-action" id="btn-defrag-${boxSafe}" data-action="defrag" data-mount="${escapeHtml(v.mountPoint)}">Defrag</button> 
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="device-stats" data-mount="${escapeHtml(v.mountPoint)}">Health Check</button> 
+                            <button class="btn btn-primary btn-sm btn-action" id="btn-scrub-${boxSafe}" data-action="scrub" data-mount="${escapeHtml(v.mountPoint)}">Verify & Repair</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" id="btn-balance-${boxSafe}" data-action="balance" data-mount="${escapeHtml(v.mountPoint)}">Optimize Space</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" id="btn-defrag-${boxSafe}" data-action="defrag" data-mount="${escapeHtml(v.mountPoint)}">Defragment</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="device-stats" data-mount="${escapeHtml(v.mountPoint)}">Drive Diagnostics</button> 
                         </div>
                         <div class="terminal-window">
                             <div class="terminal-header">
-                                <div class="terminal-title">Console / Log (${escapeHtml(v.mountPoint)})</div>
+                                <div class="terminal-title">Activity Log (${escapeHtml(v.mountPoint)})</div>
                                 <div class="terminal-header-actions">
                                     <span id="term-status-${boxSafe}" class="term-status-badge">Idle</span>
                                     <button class="term-clear-btn btn-action" data-action="clear-terminal" data-box="${boxSafe}">Clear</button>
                                 </div>
                             </div>
-                            <div id="maint-console-${boxSafe}" class="terminal-body"><span class="term-muted">Ready. Select maintenance action above.</span></div>
+                            <div id="maint-console-${boxSafe}" class="terminal-body"><span class="term-muted">Ready. Select an optimization or health task above.</span></div>
                         </div>
                     </div>`
-                        : `<div class="warning-box"><p class="text-warning mb-5">Volume Locked</p><p class="text-muted">Please mount this volume via Cockpit's native Storage page to unlock subvolume and kernel maintenance tasks.</p></div>`
+                        : `<div class="warning-box"><p class="text-warning mb-5">Storage Pool Locked</p><p class="text-muted">Please mount this storage pool to unlock subvolume and maintenance tasks.</p></div>`
                     }
                     <div class="btrfs-card danger-card">
-                        <h4 class="section-title text-danger">Destroy Pool</h4>
-                        <p class="danger-desc">Permanently destroy this volume. Unmounts the filesystem, purges all Snapper & cron schedules, and wipes disk signatures with wipefs.</p>
+                        <h4 class="section-title text-danger">Delete Storage Pool</h4>
+                        <p class="danger-desc">Permanently remove this storage pool. Unmounts the drives, purges all backup schedules, and wipes drive signatures.</p>
                         ${
                           isRoot
-                            ? `<div class="warning-box"><p class="text-warning mb-0"><b>Protected System Volume:</b> Contains the operating system root (<code>/</code>) and cannot be destroyed.</p></div>`
-                            : `<button class="btn btn-danger btn-sm btn-action" data-action="destroy-vol-modal" data-mount="${escapeHtml(v.mountPoint || "")}" data-uuid="${escapeHtml(v.uuid)}" data-label="${escapeHtml(v.label)}" data-devs="${escapeHtml(v.devs.map((d) => d.path).join(" "))}" data-index="${v.idx}">Destroy Volume & Wipe Disks</button>`
+                            ? `<div class="warning-box"><p class="text-warning mb-0"><b>Protected System Drive:</b> This pool contains the operating system root (<code>/</code>) and cannot be deleted.</p></div>`
+                            : `<button class="btn btn-danger btn-sm btn-action" data-action="destroy-vol-modal" data-mount="${escapeHtml(v.mountPoint || "")}" data-uuid="${escapeHtml(v.uuid)}" data-label="${escapeHtml(v.label)}" data-devs="${escapeHtml(v.devs.map((d) => d.path).join(" "))}" data-index="${v.idx}">Permanently Delete Pool</button>`
                         }
                     </div>
                 </div>
@@ -564,29 +563,29 @@ echo "$STATUS"
                     <!-- Kotak Atas: Subvolumes Management -->
                     <div class="btrfs-card mb-20">
                         <div class="card-header-clean mb-15">
-                            <h4 class="section-title mb-0">Subvolumes</h4>
+                            <h4 class="section-title mb-0">Subvolumes (Folders)</h4>
                         </div>
                         ${
                           v.mountPoint
                             ? `<div class="create-bar mb-15">
                             <input type="text" id="new-subvol-${v.idx}" placeholder="New subvolume name..." class="form-input flex-grow">
-                            <button class="btn btn-primary btn-sm btn-action" data-action="subvol-ops" data-op="create" data-mount="${v.mountPoint}" data-index="${v.idx}">Create Subvolume</button> 
+                            <button class="btn btn-primary btn-sm btn-action" data-action="subvol-ops" data-op="create" data-mount="${escapeHtml(v.mountPoint)}" data-index="${v.idx}">Create Subvolume</button> 
                         </div>
                         <div id="subvol-list-${v.idx}" class="table-scroll-container"><p class="p-15-muted">Loading subvolumes...</p></div>`
-                            : '<p class="text-warning">Mount pool filesystem to unlock subvolume operations.</p>'
+                            : '<p class="text-warning">Mount storage pool to view and manage subvolumes.</p>'
                         }
                     </div>
 
                     <!-- Kotak Bawah: Snapshots & Rollback Management -->
                     <div class="btrfs-card">
                         <div class="card-header-clean mb-15">
-                            <h4 class="section-title mb-0">Snapshots</h4>
+                            <h4 class="section-title mb-0">Snapshots (Backups)</h4>
                             ${
                               v.mountPoint
                                 ? `<div class="toolbar-actions">
-                                <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="snap-root" data-mount="${v.mountPoint}">Snapshot ${v.mountPoint === "/" ? "Root" : v.mountPoint}</button>
-                                <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="auto-snap" data-path="" data-mount="${v.mountPoint}">Auto-Snap (Snapper)</button>
-                                <button class="btn btn-danger btn-sm btn-action" data-action="subvol-ops" data-op="purge-snaps" data-mount="${v.mountPoint}">Purge Old</button>
+                                <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="snap-root" data-mount="${escapeHtml(v.mountPoint)}">Take Snapshot</button>
+                                <button class="btn btn-secondary btn-sm btn-action" data-action="subvol-ops" data-op="auto-snap" data-path="" data-mount="${escapeHtml(v.mountPoint)}">Auto-Backups</button>
+                                <button class="btn btn-danger btn-sm btn-action" data-action="subvol-ops" data-op="purge-snaps" data-mount="${escapeHtml(v.mountPoint)}">Clean Old</button>
                             </div>`
                                 : ""
                             }
@@ -594,7 +593,7 @@ echo "$STATUS"
                         ${
                           v.mountPoint
                             ? `<div id="snapshot-list-${v.idx}" class="table-scroll-container"><p class="p-15-muted">Loading snapshots...</p></div>`
-                            : '<p class="text-warning">Mount pool filesystem to unlock snapshot operations.</p>'
+                            : '<p class="text-warning">Mount storage pool to view and manage snapshots.</p>'
                         }
                     </div>
                 </div>
@@ -760,16 +759,16 @@ rmdir "$TMP" 2>/dev/null || true
                 <td class="text-muted text-sm">${escapeHtml(id)}</td>
                 <td>
                     <div class="tag-group">
-                        ${isRo ? '<span class="badge-ro">Read-Only</span>' : '<span class="badge-rw">Read-Write</span>'}
+                        ${isRo ? '<span class="badge-ro">Read-Only</span>' : '<span class="badge-rw">Writable</span>'}
                     </div>
                 </td>
                 <td class="text-right">
                     <div class="btn-group-sharp">
-                        <button class="btn-tool btn-action" title="Restore snapshot into a writable subvolume" data-action="subvol-ops" data-op="clone-snap" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-subid="${escapeHtml(id)}" data-index="${idx}">Restore</button>
-                        <button class="btn-tool btn-action" title="${isRo ? "Make Writable" : "Make Read-Only"}" data-action="subvol-ops" data-op="toggle-ro" data-ro="${isRo ? "false" : "true"}" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-index="${idx}">
+                        <button class="btn-tool btn-action" title="Restore this snapshot into a new writable folder" data-action="subvol-ops" data-op="clone-snap" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-subid="${escapeHtml(id)}" data-index="${idx}">Restore</button>
+                        <button class="btn-tool btn-action" title="${isRo ? "Make writable to allow file modifications" : "Protect as Read-Only to prevent changes"}" data-action="subvol-ops" data-op="toggle-ro" data-ro="${isRo ? "false" : "true"}" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-index="${idx}">
                             ${isRo ? "Unlock" : "Lock"}
                         </button>
-                        <button class="btn-tool btn-tool-danger btn-action" title="Delete snapshot" data-action="subvol-ops" data-op="del" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-subid="${escapeHtml(id)}" data-index="${idx}">Delete</button>
+                        <button class="btn-tool btn-tool-danger btn-action" title="Permanently delete this backup snapshot" data-action="subvol-ops" data-op="del" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-subid="${escapeHtml(id)}" data-index="${idx}">Delete</button>
                     </div>
                 </td>
             </tr>`;
@@ -798,7 +797,7 @@ rmdir "$TMP" 2>/dev/null || true
             const actionButtons = isSnapshotContainer
               ? `<span class="text-muted text-sm">Protected</span>`
               : `<div class="btn-group-sharp">
-                  <button class="btn-tool btn-action" title="${nocow ? "Enable CoW (+C)" : "Disable CoW (No_COW)"}" data-action="subvol-ops" data-op="${nocow ? "enable-cow" : "disable-cow"}" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-index="${idx}">
+                  <button class="btn-tool btn-action" title="${nocow ? "Enable Copy-on-Write (+CoW) for data safety" : "Disable Copy-on-Write (NoCoW) for database and VM speed"}" data-action="subvol-ops" data-op="${nocow ? "enable-cow" : "disable-cow"}" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-index="${idx}">
                       ${nocow ? "+CoW" : "NoCoW"}
                   </button>
                   ${
@@ -830,10 +829,10 @@ rmdir "$TMP" 2>/dev/null || true
           ? `<table class="data-table">
               <thead>
                 <tr>
-                  <th>Subvolume</th>
-                  <th>Created</th>
+                  <th>Subvolume Folder</th>
+                  <th>Date Created</th>
                   <th>ID</th>
-                  <th>Properties</th>
+                  <th>Features</th>
                   <th class="text-right">Actions</th>
                 </tr>
               </thead>
@@ -848,10 +847,10 @@ rmdir "$TMP" 2>/dev/null || true
           ? `<table class="data-table">
               <thead>
                 <tr>
-                  <th>Snapshot</th>
-                  <th>Created</th>
+                  <th>Snapshot Backup</th>
+                  <th>Date Created</th>
                   <th>ID</th>
-                  <th>Mode</th>
+                  <th>Access</th>
                   <th class="text-right">Actions</th>
                 </tr>
               </thead>
