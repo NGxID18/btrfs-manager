@@ -10,6 +10,14 @@ window.cmd = (args, opts = {}) =>
     ...opts,
   });
 
+window.escapeHtml = (s) =>
+  String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 window.parseSize = (s) => {
   if (!s) return 0;
   const m = s.match(/([0-9.]+)\s*([a-zA-Z]+)/);

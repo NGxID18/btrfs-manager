@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="../base1/cockpit.css" type="text/css" rel="stylesheet" />
-    <link href="style.css?v=18" type="text/css" rel="stylesheet" />
+    <link href="style.css?v=19" type="text/css" rel="stylesheet" />
 
     <script src="../base1/cockpit.js"></script>
-    <script src="src/helper.js?v=18"></script>
-    <script src="src/engine.js?v=18" defer></script>
-    <script src="src/router.js?v=18" defer></script>
+    <script src="src/helper.js?v=19"></script>
+    <script src="src/engine.js?v=19" defer></script>
+    <script src="src/router.js?v=19" defer></script>
   </head>
   <body>
     <div id="view-master">
@@ -20,7 +20,13 @@
         </div>
         <div class="view-header-actions">
           <button class="btn btn-primary" id="btn-create-raid">Create Pool</button>
-          <button class="btn btn-secondary" id="btn-refresh">Refresh Data</button>
+          <button class="btn btn-secondary" id="btn-refresh">Refresh</button>
+          <button class="btn btn-secondary" id="btn-toggle-theme" title="Toggle theme">
+            <span id="theme-icon">☀️</span> <span id="theme-label">Theme</span>
+          </button>
+          <button class="btn btn-secondary" id="btn-update-extension" title="Check for updates from GitHub">
+            <span>🔄 Update</span>
+          </button>
         </div>
       </div>
 
@@ -76,6 +82,12 @@
         <div class="view-header-title">
           <button class="btn-breadcrumb" id="btn-back-master">
             <span class="breadcrumb-arrow">←</span> Storage Pools
+          </button>
+        </div>
+        <div class="view-header-actions">
+          <button class="btn btn-secondary" id="btn-refresh-detail">Refresh</button>
+          <button class="btn btn-secondary" id="btn-toggle-theme-detail" title="Toggle theme">
+            <span class="theme-icon-sync">☀️</span>
           </button>
         </div>
       </div>
@@ -172,25 +184,5 @@
       </div>
     </div>
 
-    <!-- Floating Settings Button & Popup Menu -->
-    <div id="fab-settings-container" class="fab-container">
-      <div id="fab-menu" class="fab-menu hidden-element">
-        <div class="fab-menu-header">Pengaturan & Pembaruan</div>
-        <button class="fab-menu-item" id="btn-toggle-theme">
-          <span class="fab-icon" id="theme-icon">☀️</span>
-          <span id="theme-label">Ganti ke Tema Terang</span>
-        </button>
-        <button class="fab-menu-item" id="btn-update-extension">
-          <span class="fab-icon">🔄</span>
-          <span>Update Ekstensi</span>
-        </button>
-      </div>
-      <button id="btn-fab-settings" class="fab-btn" title="Pengaturan & Update">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-        </svg>
-      </button>
-    </div>
   </body>
 </html>

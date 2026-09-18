@@ -215,8 +215,12 @@ const initTheme = () => {
 const updateThemeUi = (theme) => {
   const lbl = $("theme-label");
   const icon = $("theme-icon");
-  if (lbl) lbl.innerText = theme === "dark" ? "Ganti ke Tema Terang" : "Ganti ke Tema Gelap";
+  if (lbl) lbl.innerText = theme === "dark" ? "Light Theme" : "Dark Theme";
   if (icon) icon.innerText = theme === "dark" ? "☀️" : "🌙";
+  const detailIcons = document.querySelectorAll(".theme-icon-sync");
+  detailIcons.forEach((el) => {
+    el.innerText = theme === "dark" ? "☀️" : "🌙";
+  });
 };
 
 const toggleTheme = () => {
@@ -286,9 +290,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
               }
 
+              const mProfile = p === "raid0" && devCount >= 2 ? "raid1" : p;
               termLog(
                 mnt,
-                `btrfs balance start --background -f -dconvert=${p} -mconvert=${p} ${mnt}`,
+                `btrfs balance start --background -f -dconvert=${p} -mconvert=${mProfile} ${mnt}`,
                 "cmd",
               );
               setTermStatus(mnt, "Converting...", true);
@@ -299,13 +304,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 "--background",
                 "-f",
                 "-dconvert=" + p,
-                "-mconvert=" + p,
+                "-mconvert=" + mProfile,
                 mnt,
               ])
                 .then((o) => {
                   termLog(
                     mnt,
-                    `Conversion to ${p} initiated in background.\n${o}`,
+                    `Conversion to ${p} (data: ${p}, meta: ${mProfile}) initiated in background.\n${o}`,
                     "status",
                   );
                   startBalanceMonitor(mnt);
@@ -318,27 +323,6 @@ document.addEventListener("DOMContentLoaded", () => {
           );
           break;
         }
-
-        case "resize-vol":
-          customPrompt(
-            "Resize Volume",
-            "Target size (e.g. 'max', '+10G'):",
-            "max",
-            "Resize",
-            (rawSz) => {
-              const sz = (rawSz || "").trim().replace(/[^0-9a-zA-Z+%-]/g, "");
-              if (sz) {
-                termLog(mnt, `btrfs filesystem resize ${sz} ${mnt}`, "cmd");
-                cmd(["btrfs", "filesystem", "resize", sz, mnt])
-                  .then((o) => {
-                    termLog(mnt, `Resized successfully:\n${o}`, "success");
-                    App.fetch();
-                  })
-                  .catch((err) => termLog(mnt, `Resize error: ${err.message}`, "err"));
-              }
-            },
-          );
-          break;
 
         case "scrub": {
           const boxSafe = (mnt || "root").replace(/[^a-zA-Z0-9]/g, "-");
@@ -871,6 +855,19 @@ printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRet
               })
               .catch((e) => customAlert("Failed", e.message));
           } else if (op === "del") {
+            const isSnapshotContainer =
+              p === ".snapshots" ||
+              p === "@snapshots" ||
+              p.endsWith("/.snapshots") ||
+              p.endsWith("/@snapshots");
+            if (isSnapshotContainer) {
+              customAlert(
+                "Protected Snapshot Storage",
+                "Cannot delete the parent snapshot storage directory.",
+              );
+              return;
+            }
+
             const mountedAt = tgt.getAttribute("data-mounted-at") || "";
             const isProtected =
               tgt.getAttribute("data-is-protected") === "true" ||
@@ -891,14 +888,28 @@ printf "Snapper successfully configured!\\nConfig Name: %s\\nFrequency: %s\\nRet
             }
 
             customConfirm(
-              "Delete Subvolume",
-              `Delete subvolume "${p}"? All files inside will be permanently deleted.`,
+              "Delete Subvolume / Snapshot",
+              `Delete "${p}"? All files inside will be permanently deleted.`,
               "Delete",
               () => {
                 const script = `
 MNT="$1"
 SUB_PATH="$2"
 SUB_ID="$3"
+
+# 1. If this is a Snapper snapshot (.snapshots/<id>/snapshot), delete via snapper CLI to keep metadata clean
+if echo "$SUB_PATH" | grep -q -E "(^|/)\\.snapshots/([0-9]+)/snapshot$"; then
+    SNAP_NUM=$(echo "$SUB_PATH" | sed -n -E "s/.*\\.snapshots\\/([0-9]+)\\/snapshot$/\\1/p")
+    if [ -n "$SNAP_NUM" ] && command -v snapper >/dev/null 2>&1; then
+        CFG=$(snapper list-configs 2>/dev/null | awk -v mnt="$MNT" '$3 == mnt || $3 == mnt"/" {print $1; exit}')
+        if [ -n "$CFG" ] && [ "$CFG" != "Config" ]; then
+            if snapper -c "$CFG" delete "$SNAP_NUM" 2>/dev/null; then
+                echo "Deleted via Snapper"
+                exit 0
+            fi
+        fi
+    fi
+fi
 
 # Safety check: Verify against any active real mountpoint or fstab
 FOUND_MOUNT=$(findmnt -n -l -o TARGET,SOURCE -t btrfs 2>/dev/null | grep -v "^/tmp" | while read -r t_m s_m; do
@@ -1235,22 +1246,6 @@ fi
                   .catch((e) => customAlert("Snapshot Failed", e.message));
               },
             );
-          } else if (op === "default") {
-            customConfirm(
-              "Set as Default Mount",
-              `Set subvolume ID ${tgt.getAttribute("data-subid")} (${p}) as the default root mount for ${mnt}?\n\nNote: On Debian/Ubuntu where /etc/fstab specifies 'subvol=@' or similar, that mount option takes precedence over the default subvolume at boot. Full rollback may require restoring the snapshot into the active root subvolume.`,
-              "Confirm Rollback",
-              () =>
-                cmd([
-                  "btrfs",
-                  "subvolume",
-                  "set-default",
-                  tgt.getAttribute("data-subid"),
-                  mnt,
-                ])
-                  .then(() => customAlert("Success", `Snapshot ID ${tgt.getAttribute("data-subid")} is now set as the default mount.`))
-                  .catch((e) => customAlert("Error", e.message)),
-            );
           } else if (op === "disable-cow" || op === "enable-cow") {
             const isDisable = op === "disable-cow";
             const flag = isDisable ? "+C" : "-C";
@@ -1325,7 +1320,7 @@ exit $RES
           } else if (op === "purge-snaps") {
             customConfirm(
               "Purge Old Snapshots",
-              "Hapus semua snapshot yang sudah tidak terpakai menurut kebijakan Snapper/Cron?",
+              "Purge all old snapshots that exceed Snapper / timeline retention policies?",
               "Purge Now",
               () => {
                 const bashScript = `
@@ -1377,22 +1372,19 @@ fi
     if (!newDev) return;
     $("add-dev-modal").classList.add("hidden-element");
 
-    const boxId = `maint-console-${(mnt || "").replace(/\//g, "-")}`;
-    const updateBox = (text) => {
-      const b = $(boxId);
-      if (b) {
-        b.classList.remove("hidden-element");
-        b.innerText = text;
-      }
-    };
+    termLog(mnt, `btrfs device add -f ${newDev} ${mnt}`, "cmd");
+    setTermStatus(mnt, "Adding...", true);
 
-    updateBox(`Merging ${newDev}...`);
     cmd(["btrfs", "device", "add", "-f", newDev, mnt])
       .then((o) => {
-        updateBox(`Added successfully.\n\n${o}`);
+        termLog(mnt, `Device ${newDev} added successfully.\n${o}`, "success");
+        setTermStatus(mnt, "Idle", false);
         App.fetch();
       })
-      .catch((e) => updateBox("Failed: " + e.message));
+      .catch((e) => {
+        termLog(mnt, `Failed to add device: ${e.message}`, "err");
+        setTermStatus(mnt, "Error", false);
+      });
   });
 
   on("btn-create-raid", "click", () => {
@@ -1505,14 +1497,32 @@ echo "DELETED"
 
     cmd(["sh", "-c", script, "--", mount, uuid, devs])
       .then(() => {
-        customAlert(
-          "Volume Destroyed",
-          "The BTRFS volume and all associated snapshot schedules have been removed cleanly. Target member disks have been wiped and are now unallocated.",
-        );
-        $("view-detail").classList.add("hidden-element");
-        $("view-master").classList.remove("hidden-element");
-        $("detail-container").setAttribute("data-active-index", "");
-        App.fetch();
+        cmd(["sh", "-c", `grep -qs -E "${uuid}|${mount}" /etc/fstab && echo "YES" || echo "NO"`])
+          .then((fstabCheck) => {
+            const hasFstab = (fstabCheck || "").trim() === "YES";
+            if (hasFstab) {
+              customAlert(
+                "Volume Destroyed - Notice: /etc/fstab",
+                "The BTRFS volume and member disk signatures were successfully wiped.\n\nIMPORTANT WARNING: An entry matching this volume is still in /etc/fstab. Remember to remove or comment out this entry in /etc/fstab before restarting your system to prevent boot errors.",
+              );
+            } else {
+              customAlert(
+                "Volume Destroyed",
+                "The BTRFS volume and all associated snapshot schedules have been removed cleanly. Target member disks have been wiped and are now unallocated.",
+              );
+            }
+            $("view-detail").classList.add("hidden-element");
+            $("view-master").classList.remove("hidden-element");
+            $("detail-container").setAttribute("data-active-index", "");
+            App.fetch();
+          })
+          .catch(() => {
+            customAlert("Volume Destroyed", "The BTRFS volume has been removed cleanly.");
+            $("view-detail").classList.add("hidden-element");
+            $("view-master").classList.remove("hidden-element");
+            $("detail-container").setAttribute("data-active-index", "");
+            App.fetch();
+          });
       })
       .catch((err) => {
         customAlert("Error Destroying Volume", err.message);
@@ -1585,33 +1595,36 @@ echo "DELETED"
     );
   });
 
-  on("btn-fab-settings", "click", (e) => {
-    e.stopPropagation();
-    const m = $("fab-menu");
-    if (m) m.classList.toggle("hidden-element");
+  on("btn-toggle-theme", "click", () => toggleTheme());
+  on("btn-toggle-theme-detail", "click", () => toggleTheme());
+
+  on("btn-refresh-detail", "click", () => {
+    const activeIdx = $("detail-container")
+      ? $("detail-container").getAttribute("data-active-index")
+      : null;
+    App.fetch().then(() => {
+      if (activeIdx !== null && activeIdx !== "") {
+        App.renderDetail(activeIdx);
+      }
+    });
   });
 
-  on("btn-toggle-theme", "click", (e) => {
-    e.stopPropagation();
-    toggleTheme();
-  });
-
-  on("btn-update-extension", "click", (e) => {
-    e.stopPropagation();
-    const m = $("fab-menu");
-    if (m) m.classList.add("hidden-element");
-
+  on("btn-update-extension", "click", () => {
     customConfirm(
-      "Update Ekstensi BTRFS Manager",
-      "Perbarui ekstensi ke versi terbaru dari GitHub (https://github.com/NGxID18/btrfs-manager)?\n\nSistem akan mengambil kode terbaru dari branch main dan memuat ulang antarmuka.",
-      "Update Sekarang",
+      "Update BTRFS Manager Extension",
+      "Update the extension to the latest version from the official GitHub repository (https://github.com/NGxID18/btrfs-manager)?\n\nThe system will fetch the latest code from origin/main and reload the interface.",
+      "Update Now",
       () => {
         customAlert(
-          "Memproses Update",
-          "Sedang mengunduh pembaruan terbaru dari repositori GitHub...",
+          "Updating Extension",
+          "Downloading the latest updates from GitHub repository...",
         );
         const updateScript = `
 TARGET_DIR="/usr/share/cockpit/btrfs-manager"
+if [ -d "$HOME/.local/share/cockpit/btrfs-manager" ]; then
+    TARGET_DIR="$HOME/.local/share/cockpit/btrfs-manager"
+fi
+
 if [ -d "$TARGET_DIR/.git" ]; then
     cd "$TARGET_DIR"
     git config --global --add safe.directory "$TARGET_DIR" 2>/dev/null || true
@@ -1629,31 +1642,18 @@ fi
         cmd(["sh", "-c", updateScript])
           .then(() => {
             customAlert(
-              "Update Berhasil!",
-              "Ekstensi telah berhasil diperbarui ke versi terbaru. Halaman akan dimuat ulang...",
+              "Update Successful!",
+              "The extension has been successfully updated. The page will reload now...",
             );
             setTimeout(() => window.location.reload(), 1800);
           })
           .catch((err) => {
             customAlert(
-              "Update Gagal",
-              "Gagal memperbarui ekstensi:\n" + err.message,
+              "Update Failed",
+              "Failed to update extension:\n" + err.message,
             );
           });
       },
     );
-  });
-
-  document.addEventListener("click", (e) => {
-    const container = $("fab-settings-container");
-    const menu = $("fab-menu");
-    if (
-      menu &&
-      !menu.classList.contains("hidden-element") &&
-      container &&
-      !container.contains(e.target)
-    ) {
-      menu.classList.add("hidden-element");
-    }
   });
 });

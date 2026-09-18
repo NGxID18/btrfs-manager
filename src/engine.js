@@ -402,25 +402,25 @@ echo "$STATUS"
             <div class="btrfs-card hoverable h-100-col">
                 <div class="card-header-clean">
                     <div>
-                        <h3 class="card-title-text">${v.label}</h3>
+                        <h3 class="card-title-text">${escapeHtml(v.label)}</h3>
                         ${alertBadge ? `<div class="mt-5">${alertBadge}</div>` : ""}
                     </div>
                     <div class="card-status-tag">
-                        ${v.mountPoint ? `<span class="badge-mounted">${v.mountPoint}</span>` : `<span class="badge-ro">Not Mounted</span>`}
+                        ${v.mountPoint ? `<span class="badge-mounted">${escapeHtml(v.mountPoint)}</span>` : `<span class="badge-ro">Not Mounted</span>`}
                     </div>
                 </div>
                 <div class="spec-table mt-15 mb-20">
                     <div class="spec-row">
                         <span class="spec-label">UUID</span>
-                        <span class="btrfs-code text-truncate">${v.uuid}</span>
+                        <span class="btrfs-code text-truncate" title="${escapeHtml(v.uuid)}">${escapeHtml(v.uuid)}</span>
                     </div>
                     <div class="spec-row">
                         <span class="spec-label">Hardware</span>
-                        <span class="spec-val text-muted">${v.hwList}</span>
+                        <span class="spec-val text-muted">${escapeHtml(v.hwList)}</span>
                     </div>
                     <div class="spec-row">
                         <span class="spec-label">Capacity</span>
-                        <span class="spec-val"><b>${v.rawSize}</b> (Usable: <span id="master-usable-${v.idx}">${v.usable}</span>)</span>
+                        <span class="spec-val"><b>${escapeHtml(v.rawSize)}</b> (Usable: <span id="master-usable-${v.idx}">${v.usable}</span>)</span>
                     </div>
                     <div class="spec-row">
                         <span class="spec-label">RAID Profile</span>
@@ -428,7 +428,7 @@ echo "$STATUS"
                     </div>
                     <div class="spec-row">
                         <span class="spec-label">Auto-Snapshot</span>
-                        <span class="spec-val"><span id="master-snap-${v.idx}">${v.snapStatus}</span>${!this.hasSnapper && (v.snapStatus === "Not Configured" || v.snapStatus === "Loading...") ? ' <span class="badge-snapper-missing">No Snapper</span>' : ""}</span>
+                        <span class="spec-val"><span id="master-snap-${v.idx}">${escapeHtml(v.snapStatus)}</span>${!this.hasSnapper && (v.snapStatus === "Not Configured" || v.snapStatus === "Loading...") ? ' <span class="badge-snapper-missing">No Snapper</span>' : ""}</span>
                     </div>
                 </div>
                 <button class="btn btn-secondary w-100 mt-auto btn-action" data-action="open-detail" data-index="${v.idx}">Manage Storage Pool</button>
@@ -458,13 +458,13 @@ echo "$STATUS"
         const canRemove = v.devs && v.devs.length > 1;
         const removeBtn = v.mountPoint && canRemove
           ? d.missing
-            ? `<button class="btn-tool btn-tool-danger btn-action" data-action="remove-missing-dev" data-mount="${v.mountPoint}">Remove Missing</button>`
-            : `<button class="btn-tool btn-tool-danger btn-action" data-action="remove-dev" data-mount="${v.mountPoint}" data-devpath="${d.path}">Remove</button>`
+            ? `<button class="btn-tool btn-tool-danger btn-action" data-action="remove-missing-dev" data-mount="${escapeHtml(v.mountPoint)}">Remove Missing</button>`
+            : `<button class="btn-tool btn-tool-danger btn-action" data-action="remove-dev" data-mount="${escapeHtml(v.mountPoint)}" data-devpath="${escapeHtml(d.path)}">Remove</button>`
           : "";
         return `<tr>
-          <td><span class="btrfs-code ${d.missing ? "text-danger" : ""}">${d.path}</span></td>
-          <td class="text-muted text-sm">${d.id}</td>
-          <td class="text-sm fw-bold">${d.size}</td>
+          <td><span class="btrfs-code ${d.missing ? "text-danger" : ""}">${escapeHtml(d.path)}</span></td>
+          <td class="text-muted text-sm">${escapeHtml(d.id)}</td>
+          <td class="text-sm fw-bold">${escapeHtml(d.size)}</td>
           <td>${missingBadge || errBadge}</td>
           <td class="text-right">${removeBtn}</td>
         </tr>`;
@@ -488,10 +488,10 @@ echo "$STATUS"
     $("detail-container").innerHTML = `
             <div class="pool-detail-header mb-20">
                 <div class="pool-title-group">
-                    <h2 class="pool-title">${v.label}</h2>
+                    <h2 class="pool-title">${escapeHtml(v.label)}</h2>
                     <div class="tag-group mt-5">
-                        ${v.mountPoint ? `<span class="badge-mounted">Mounted: ${v.mountPoint}</span>` : `<span class="badge-ro">Not Mounted (Locked)</span>`}
-                        <span class="btrfs-code">${v.uuid}</span>
+                        ${v.mountPoint ? `<span class="badge-mounted">Mounted: ${escapeHtml(v.mountPoint)}</span>` : `<span class="badge-ro">Not Mounted (Locked)</span>`}
+                        <span class="btrfs-code">${escapeHtml(v.uuid)}</span>
                     </div>
                 </div>
             </div>
@@ -500,11 +500,11 @@ echo "$STATUS"
                     <div class="btrfs-card">
                         <h4 class="section-title">Pool Information & Physical Devices</h4>
                         <div class="spec-table mb-15">
-                            <div class="spec-row"><span class="spec-label">Hardware Profile</span><span class="spec-val text-primary fw-bold">${v.hwList}</span></div>
-                            <div class="spec-row"><span class="spec-label">Raw Capacity</span><span class="spec-val">${v.rawSize} <span class="text-muted">(Aggregated Storage)</span></span></div>
+                            <div class="spec-row"><span class="spec-label">Hardware Profile</span><span class="spec-val text-primary fw-bold">${escapeHtml(v.hwList)}</span></div>
+                            <div class="spec-row"><span class="spec-label">Raw Capacity</span><span class="spec-val">${escapeHtml(v.rawSize)} <span class="text-muted">(Aggregated)</span></span></div>
                             <div class="spec-row"><span class="spec-label">Usable Filesystem</span><span id="usable-display-${v.idx}" class="spec-val fw-bold">${v.usable}</span></div>
                             <div class="spec-row"><span class="spec-label">Data RAID Level</span><span id="raid-display-${v.idx}" class="spec-val">${v.raid}</span></div>
-                            <div class="spec-row"><span class="spec-label">Auto-Snapshot</span><span id="snap-display-${v.idx}" class="spec-val fw-bold">${v.snapStatus}</span></div>
+                            <div class="spec-row"><span class="spec-label">Auto-Snapshot</span><span id="snap-display-${v.idx}" class="spec-val fw-bold">${escapeHtml(v.snapStatus)}</span></div>
                             <div class="spec-row"><span class="spec-label">Hardware Health</span><span id="health-display-${v.idx}" class="spec-val">${v.healthHtml || '<span class="text-success fw-bold">✓ Healthy (0 IO Errors)</span>'}</span></div>
                             <div class="spec-row"><span class="spec-label">Mount Features</span><span id="opts-display-${v.idx}" class="spec-val">${v.mountOptsHtml || '<span class="text-muted">Standard</span>'}</span></div>
                         </div>
@@ -525,26 +525,21 @@ echo "$STATUS"
                                 </tbody>
                             </table>
                         </div>
-                        ${v.mountPoint ? `<div class="advanced-topo-actions"><button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${v.mountPoint}">Add Device</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-raid" data-mount="${v.mountPoint}" data-index="${v.idx}">Convert RAID</button> <button class="btn btn-secondary btn-sm btn-action" data-action="resize-vol" data-mount="${v.mountPoint}">Resize Volume</button></div>` : ""}
+                        ${v.mountPoint ? `<div class="advanced-topo-actions"><button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${escapeHtml(v.mountPoint)}">Add Device</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-raid" data-mount="${escapeHtml(v.mountPoint)}" data-index="${v.idx}">Convert RAID</button></div>` : ""}
                     </div>
                     ${
                       v.mountPoint
                         ? `<div class="btrfs-card">
                         <h4 class="section-title">Maintenance & Optimization</h4>
                         <div class="toolbar-actions mb-15">
-                            <button class="btn btn-primary btn-sm btn-action" id="btn-scrub-${boxSafe}" data-action="scrub" data-mount="${v.mountPoint}">Scrub</button> 
-                            <button class="btn btn-secondary btn-sm btn-action" id="btn-balance-${boxSafe}" data-action="balance" data-mount="${v.mountPoint}">Balance</button> 
-                            <button class="btn btn-secondary btn-sm btn-action" id="btn-defrag-${boxSafe}" data-action="defrag" data-mount="${v.mountPoint}">Defrag</button> 
-                            <button class="btn btn-secondary btn-sm btn-action" data-action="device-stats" data-mount="${v.mountPoint}">Health Check</button> 
+                            <button class="btn btn-primary btn-sm btn-action" id="btn-scrub-${boxSafe}" data-action="scrub" data-mount="${escapeHtml(v.mountPoint)}">Scrub</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" id="btn-balance-${boxSafe}" data-action="balance" data-mount="${escapeHtml(v.mountPoint)}">Balance</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" id="btn-defrag-${boxSafe}" data-action="defrag" data-mount="${escapeHtml(v.mountPoint)}">Defrag</button> 
+                            <button class="btn btn-secondary btn-sm btn-action" data-action="device-stats" data-mount="${escapeHtml(v.mountPoint)}">Health Check</button> 
                         </div>
                         <div class="terminal-window">
                             <div class="terminal-header">
-                                <div class="terminal-controls">
-                                    <span class="term-dot term-dot-red"></span>
-                                    <span class="term-dot term-dot-yellow"></span>
-                                    <span class="term-dot term-dot-green"></span>
-                                </div>
-                                <div class="terminal-title">btrfs@console:${v.mountPoint}#</div>
+                                <div class="terminal-title">Console / Log (${escapeHtml(v.mountPoint)})</div>
                                 <div class="terminal-header-actions">
                                     <span id="term-status-${boxSafe}" class="term-status-badge">Idle</span>
                                     <button class="term-clear-btn btn-action" data-action="clear-terminal" data-box="${boxSafe}">Clear</button>
@@ -561,7 +556,7 @@ echo "$STATUS"
                         ${
                           isRoot
                             ? `<div class="warning-box"><p class="text-warning mb-0"><b>Protected System Volume:</b> Contains the operating system root (<code>/</code>) and cannot be destroyed.</p></div>`
-                            : `<button class="btn btn-danger btn-sm btn-action" data-action="destroy-vol-modal" data-mount="${v.mountPoint || ""}" data-uuid="${v.uuid}" data-label="${v.label}" data-devs="${v.devs.map((d) => d.path).join(" ")}" data-index="${v.idx}">Destroy Volume & Wipe Disks</button>`
+                            : `<button class="btn btn-danger btn-sm btn-action" data-action="destroy-vol-modal" data-mount="${escapeHtml(v.mountPoint || "")}" data-uuid="${escapeHtml(v.uuid)}" data-label="${escapeHtml(v.label)}" data-devs="${escapeHtml(v.devs.map((d) => d.path).join(" "))}" data-index="${v.idx}">Destroy Volume & Wipe Disks</button>`
                         }
                     </div>
                 </div>
@@ -689,9 +684,11 @@ btrfs subvolume list "$SCAN_DIR" 2>/dev/null | while read -r line; do
     fi
 
     IS_SNAP="false"
-    if echo " $SNAP_IDS " | grep -q " $id "; then
+    if [ "$sub_path" = ".snapshots" ] || [ "$sub_path" = "@snapshots" ] || echo "$sub_path" | grep -q -E "/\\.snapshots$|/@snapshots$"; then
+        IS_SNAP="false"
+    elif echo " $SNAP_IDS " | grep -q " $id "; then
         IS_SNAP="true"
-    elif echo "$sub_path" | grep -q -E "\\.snapshots|snapshot|_snap_|snap-"; then
+    elif echo "$sub_path" | grep -q -E "\\.snapshots/|/snapshot|_snap_|snap-"; then
         IS_SNAP="true"
     fi
 
@@ -730,9 +727,19 @@ rmdir "$TMP" 2>/dev/null || true
           const ctime = parts[3];
           const mountPt = parts[4] || "";
           const inFstab = parts[5] === "true";
-          const isSnapshot = parts[6] === "true";
+          let isSnapshot = parts[6] === "true";
           const isRo = parts[7] === "true";
           const isDef = parts[8] === "true";
+
+          const isSnapshotContainer =
+            path === ".snapshots" ||
+            path === "@snapshots" ||
+            path.endsWith("/.snapshots") ||
+            path.endsWith("/@snapshots");
+
+          if (isSnapshotContainer) {
+            isSnapshot = false;
+          }
 
           const isRootSubvol =
             mountPt === "/" ||
@@ -743,36 +750,37 @@ rmdir "$TMP" 2>/dev/null || true
                 path === "rootfs" ||
                 path === "@root"));
 
-          const isProtected = isRootSubvol || Boolean(mountPt) || inFstab;
+          const isProtected =
+            isSnapshotContainer || isRootSubvol || Boolean(mountPt) || inFstab;
 
           if (isSnapshot) {
             snapshotsRows += `<tr>
-                <td><span class="btrfs-code">/${path}</span></td>
-                <td class="text-muted text-sm">${ctime}</td>
-                <td class="text-muted text-sm">${id}</td>
+                <td><span class="btrfs-code">/${escapeHtml(path)}</span></td>
+                <td class="text-muted text-sm">${escapeHtml(ctime)}</td>
+                <td class="text-muted text-sm">${escapeHtml(id)}</td>
                 <td>
                     <div class="tag-group">
                         ${isRo ? '<span class="badge-ro">Read-Only</span>' : '<span class="badge-rw">Read-Write</span>'}
-                        ${isDef ? '<span class="badge-default-mount">Default</span>' : ""}
                     </div>
                 </td>
                 <td class="text-right">
                     <div class="btn-group-sharp">
-                        <button class="btn-tool btn-action" title="Restore / Clone snapshot" data-action="subvol-ops" data-op="clone-snap" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Restore</button>
-                        <button class="btn-tool btn-action" title="${isRo ? "Make Writable" : "Make Read-Only"}" data-action="subvol-ops" data-op="toggle-ro" data-ro="${isRo ? "false" : "true"}" data-mount="${mount}" data-path="${path}" data-index="${idx}">
+                        <button class="btn-tool btn-action" title="Restore snapshot into a writable subvolume" data-action="subvol-ops" data-op="clone-snap" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-subid="${escapeHtml(id)}" data-index="${idx}">Restore</button>
+                        <button class="btn-tool btn-action" title="${isRo ? "Make Writable" : "Make Read-Only"}" data-action="subvol-ops" data-op="toggle-ro" data-ro="${isRo ? "false" : "true"}" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-index="${idx}">
                             ${isRo ? "Unlock" : "Lock"}
                         </button>
-                        <button class="btn-tool btn-action" title="Set as default mount subvolume" data-action="subvol-ops" data-op="default" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Default</button>
-                        <button class="btn-tool btn-tool-danger btn-action" title="Delete snapshot" data-action="subvol-ops" data-op="del" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Delete</button>
+                        <button class="btn-tool btn-tool-danger btn-action" title="Delete snapshot" data-action="subvol-ops" data-op="del" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-subid="${escapeHtml(id)}" data-index="${idx}">Delete</button>
                     </div>
                 </td>
             </tr>`;
           } else {
             let badgeHtml = "";
-            if (isRootSubvol) {
+            if (isSnapshotContainer) {
+              badgeHtml += `<span class="badge-fstab">Snapshot Storage</span>`;
+            } else if (isRootSubvol) {
               badgeHtml += `<span class="badge-root">OS Root (/)</span>`;
             } else if (mountPt) {
-              badgeHtml += `<span class="badge-mounted">${mountPt}</span>`;
+              badgeHtml += `<span class="badge-mounted">${escapeHtml(mountPt)}</span>`;
             } else if (inFstab) {
               badgeHtml += `<span class="badge-fstab">In /etc/fstab</span>`;
             }
@@ -787,10 +795,23 @@ rmdir "$TMP" 2>/dev/null || true
               ? `<span class="badge-nocow">NoCOW</span>`
               : "";
 
+            const actionButtons = isSnapshotContainer
+              ? `<span class="text-muted text-sm">Protected</span>`
+              : `<div class="btn-group-sharp">
+                  <button class="btn-tool btn-action" title="${nocow ? "Enable CoW (+C)" : "Disable CoW (No_COW)"}" data-action="subvol-ops" data-op="${nocow ? "enable-cow" : "disable-cow"}" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-index="${idx}">
+                      ${nocow ? "+CoW" : "NoCoW"}
+                  </button>
+                  ${
+                    !isProtected
+                      ? `<button class="btn-tool btn-tool-danger btn-action" title="Delete subvolume" data-action="subvol-ops" data-op="del" data-mount="${escapeHtml(mount)}" data-path="${escapeHtml(path)}" data-subid="${escapeHtml(id)}" data-index="${idx}" data-mounted-at="${escapeHtml(mountPt)}" data-is-protected="${isProtected}">Delete</button>`
+                      : ""
+                  }
+              </div>`;
+
             subvolsRows += `<tr>
-                <td><span class="btrfs-code">/${path}</span></td>
-                <td class="text-muted text-sm">${ctime}</td>
-                <td class="text-muted text-sm">${id}</td>
+                <td><span class="btrfs-code">/${escapeHtml(path)}</span></td>
+                <td class="text-muted text-sm">${escapeHtml(ctime)}</td>
+                <td class="text-muted text-sm">${escapeHtml(id)}</td>
                 <td>
                     <div class="tag-group">
                         ${badgeHtml}
@@ -798,16 +819,7 @@ rmdir "$TMP" 2>/dev/null || true
                     </div>
                 </td>
                 <td class="text-right">
-                    <div class="btn-group-sharp">
-                        <button class="btn-tool btn-action" title="${nocow ? "Enable CoW (+C)" : "Disable CoW (No_COW)"}" data-action="subvol-ops" data-op="${nocow ? "enable-cow" : "disable-cow"}" data-mount="${mount}" data-path="${path}" data-index="${idx}">
-                            ${nocow ? "+CoW" : "NoCoW"}
-                        </button>
-                        ${
-                          !isProtected
-                            ? `<button class="btn-tool btn-tool-danger btn-action" title="Delete subvolume" data-action="subvol-ops" data-op="del" data-mount="${mount}" data-path="${path}" data-subid="${id}" data-index="${idx}">Delete</button>`
-                            : ""
-                        }
-                    </div>
+                    ${actionButtons}
                 </td>
             </tr>`;
           }
