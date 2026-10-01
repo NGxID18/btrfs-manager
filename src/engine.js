@@ -412,7 +412,7 @@ echo "$STATUS"
         </div>
         <div class="alloc-bar-group">
           <div class="alloc-bar-header">
-            <span class="alloc-bar-title">Metadata <span class="btrfs-code">${escapeHtml(m.profile)}</span></span>
+            <span class="alloc-bar-title">Metadata <span class="btrfs-code">${escapeHtml(m.profile)}</span>${m.profile === "SINGLE" && v.mountPoint ? ` <button class="btn-xs-tag btn-action" data-action="quick-meta-dup" data-mount="${escapeHtml(v.mountPoint)}" data-index="${v.idx}" title="Upgrade metadata from Single to DUP for corruption protection">Upgrade to DUP</button>` : ""}</span>
             <span class="alloc-bar-stats">${escapeHtml(m.usedStr)} / ${escapeHtml(m.totalStr)} (${m.pct}%)</span>
           </div>
           <div class="alloc-bar-track">
