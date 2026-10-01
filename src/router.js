@@ -11,15 +11,18 @@ const {
 } = window;
 
 const getEmptyDevices = () => {
-  return cmd(["lsblk", "-J", "-o", "PATH,SIZE,TYPE,FSTYPE,MOUNTPOINT"]).then(
+  return cmd(["lsblk", "-J", "-o", "NAME,PATH,SIZE,TYPE,FSTYPE,MOUNTPOINT"]).then(
     (data) => {
       const extractEmpty = (devs) =>
         devs.reduce((acc, d) => {
-          if (d.children) return acc.concat(extractEmpty(d.children));
+          if (d.children && d.children.length > 0) return acc.concat(extractEmpty(d.children));
+          const sizeBytes = parseSize(d.size);
           if (
             !d.fstype &&
             !d.mountpoint &&
-            (d.type === "disk" || d.type === "part")
+            (d.type === "disk" || d.type === "part") &&
+            !d.path.startsWith("/dev/zram") &&
+            sizeBytes >= 256 * 1024 * 1024
           )
             acc.push(d);
           return acc;
@@ -290,35 +293,56 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
               }
 
-              const mProfile = p === "raid0" && devCount >= 2 ? "raid1" : p;
-              termLog(
-                mnt,
-                `btrfs balance start --background -f -dconvert=${p} -mconvert=${mProfile} ${mnt}`,
-                "cmd",
-              );
-              setTermStatus(mnt, "Converting...", true);
-              cmd([
-                "btrfs",
-                "balance",
-                "start",
-                "--background",
-                "-f",
-                "-dconvert=" + p,
-                "-mconvert=" + mProfile,
-                mnt,
-              ])
-                .then((o) => {
-                  termLog(
-                    mnt,
-                    `Protection conversion initiated in background.\n${o}`,
-                    "status",
-                  );
-                  startBalanceMonitor(mnt);
-                })
-                .catch((err) => {
-                  termLog(mnt, `Conversion failed: ${err.message}`, "err");
-                  setTermStatus(mnt, "Error", false);
-                });
+              const metaOptions = [
+                { v: "dup", l: "DUP - Duplicate metadata copies (Recommended for safety)" },
+                { v: "single", l: "Single - Single metadata copy (Saves space)" },
+              ];
+              if (devCount >= 2) {
+                metaOptions.unshift({ v: "raid1", l: "RAID 1 (Mirror) - Mirrored metadata across drives (Min 2 drives)" });
+              }
+              if (devCount >= 4) {
+                metaOptions.unshift({ v: "raid10", l: "RAID 10 - Striped and mirrored metadata across drives (Min 4 drives)" });
+              }
+
+              setTimeout(() => {
+                customSelect(
+                  "Change Metadata Protection",
+                  `Data profile set to ${p.toUpperCase()}.\nNow choose metadata protection mode for this storage pool:`,
+                  metaOptions,
+                  "Start Conversion",
+                  (metaProf) => {
+                    if (!metaProf) return;
+                    termLog(
+                      mnt,
+                      `btrfs balance start --background -f -dconvert=${p} -mconvert=${metaProf} ${mnt}`,
+                      "cmd",
+                    );
+                    setTermStatus(mnt, "Converting...", true);
+                    cmd([
+                      "btrfs",
+                      "balance",
+                      "start",
+                      "--background",
+                      "-f",
+                      "-dconvert=" + p,
+                      "-mconvert=" + metaProf,
+                      mnt,
+                    ])
+                      .then((o) => {
+                        termLog(
+                          mnt,
+                          `Protection conversion (Data: ${p.toUpperCase()}, Metadata: ${metaProf.toUpperCase()}) initiated in background.\n${o}`,
+                          "status",
+                        );
+                        startBalanceMonitor(mnt);
+                      })
+                      .catch((err) => {
+                        termLog(mnt, `Conversion failed: ${err.message}`, "err");
+                        setTermStatus(mnt, "Error", false);
+                      });
+                  },
+                );
+              }, 200);
             },
           );
           break;
@@ -1497,7 +1521,15 @@ echo "DELETED"
 
     cmd(["sh", "-c", script, "--", mount, uuid, devs])
       .then(() => {
-        cmd(["sh", "-c", 'grep -qs -E "$1|$2" /etc/fstab && echo "YES" || echo "NO"', "--", uuid, mount])
+        const fstabScript = `
+UUID="$1"
+MNT="$2"
+MATCH=0
+if [ -n "$UUID" ] && grep -qs "$UUID" /etc/fstab; then MATCH=1; fi
+if [ -n "$MNT" ] && [ "$MNT" != "/" ] && grep -qs -E "[[:space:]]$MNT[[:space:]]" /etc/fstab; then MATCH=1; fi
+[ "$MATCH" -eq 1 ] && echo "YES" || echo "NO"
+`;
+        cmd(["sh", "-c", fstabScript, "--", uuid, mount])
           .then((fstabCheck) => {
             const hasFstab = (fstabCheck || "").trim() === "YES";
             if (hasFstab) {
@@ -1535,11 +1567,22 @@ echo "DELETED"
   );
   on("btn-refresh", "click", () => App.fetch());
 
+  on("raid-profile", "change", (e) => {
+    const prof = e.target.value;
+    const metaSelect = $("meta-profile");
+    if (!metaSelect) return;
+    if (prof === "raid1") metaSelect.value = "raid1";
+    else if (prof === "raid10") metaSelect.value = "raid10";
+    else if (prof === "raid0") metaSelect.value = "dup";
+    else if (prof === "single" || prof === "dup") metaSelect.value = "dup";
+  });
+
   on("btn-execute-format", "click", () => {
     const disks = Array.from(
       document.querySelectorAll('input[name="tgt-disk"]:checked'),
     ).map((cb) => cb.value);
     const prof = $("raid-profile").value;
+    const metaProf = $("meta-profile") ? $("meta-profile").value : "dup";
     const lbl = $("volume-label").value.trim();
     if (!disks.length)
       return (
@@ -1551,24 +1594,38 @@ echo "DELETED"
     if ((prof === "raid0" || prof === "raid1") && disks.length < 2) {
       customAlert(
         "More Drives Needed",
-        `The ${prof.toUpperCase()} profile requires at least 2 drives. You selected ${disks.length}.`,
+        `The data ${prof.toUpperCase()} profile requires at least 2 drives. You selected ${disks.length}.`,
       );
       return;
     }
     if (prof === "raid10" && disks.length < 4) {
       customAlert(
         "More Drives Needed",
-        `The RAID 10 profile requires at least 4 drives. You selected ${disks.length}.`,
+        `The data RAID 10 profile requires at least 4 drives. You selected ${disks.length}.`,
+      );
+      return;
+    }
+    if ((metaProf === "raid0" || metaProf === "raid1") && disks.length < 2) {
+      customAlert(
+        "More Drives Needed",
+        `The metadata ${metaProf.toUpperCase()} profile requires at least 2 drives. You selected ${disks.length}.`,
+      );
+      return;
+    }
+    if (metaProf === "raid10" && disks.length < 4) {
+      customAlert(
+        "More Drives Needed",
+        `The metadata RAID 10 profile requires at least 4 drives. You selected ${disks.length}.`,
       );
       return;
     }
 
     customConfirm(
       "Format Drives & Create Storage Pool",
-      `Are you sure you want to format ${disks.length} drive(s) into a new storage pool (${prof.toUpperCase()})?\n\nSelected drives: ${disks.join(", ")}\n\nWARNING: All files on these drives will be permanently erased.`,
+      `Are you sure you want to format ${disks.length} drive(s) into a new storage pool?\n\n• Data Profile: ${prof.toUpperCase()}\n• Metadata Profile: ${metaProf.toUpperCase()}\n• Selected drives: ${disks.join(", ")}\n\nWARNING: All files on these drives will be permanently erased.`,
       "Format & Create Pool",
       () => {
-        let c = ["mkfs.btrfs", "-d", prof, "-m", prof, "-f"];
+        let c = ["mkfs.btrfs", "-d", prof, "-m", metaProf, "-f"];
         if (lbl) c.push("-L", lbl);
         c.push(...disks);
         $("format-status").classList.remove("hidden-element");

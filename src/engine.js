@@ -17,7 +17,7 @@ window.App = {
       const [btrfsOut, mntOut, lsblkOut, snapperCheck] = await Promise.all([
         cmd(["btrfs", "filesystem", "show"]),
         cmd(["findmnt", "-A", "-J", "-t", "btrfs"]).catch(() => "{}"),
-        cmd(["lsblk", "-J", "-o", "PATH,MODEL,VENDOR,TYPE"]).catch(() => "{}"),
+        cmd(["lsblk", "-J", "-o", "NAME,PATH,MODEL,VENDOR,TYPE"]).catch(() => "{}"),
         cmd(["sh", "-c", "command -v snapper >/dev/null 2>&1 && echo yes || echo no"]).catch(() => "no"),
       ]);
       this.hasSnapper = (snapperCheck || "").trim() === "yes";
@@ -337,21 +337,49 @@ echo "$STATUS"
             ? `<span class="text-danger fw-bold">⚠️ ${totalDevErrors} Disk Error(s) Detected!</span>`
             : `<span class="text-success fw-bold">✓ Healthy (No Errors)</span>`;
 
-        const dM = dfOut.match(/Data,\s*(.*?):/i),
-          mM = dfOut.match(/Metadata,\s*(.*?):/i);
-        v.raid =
-          (dM
-            ? `<span class="btrfs-code">Data: ${dM[1].toUpperCase()}</span>`
-            : "") +
-          (mM && dM && mM[1] !== dM[1]
-            ? ` <span class="btrfs-code text-muted">Meta: ${mM[1].toUpperCase()}</span>`
-            : "");
+        // Parse chunk allocations (Data & Metadata)
+        let dataAlloc = null;
+        let metaAlloc = null;
+        const dMatch = dfOut.match(/Data,\s*([^:]+):\s*total=([^,]+),\s*used=([^\n]+)/i);
+        if (dMatch) {
+          const prof = dMatch[1].trim();
+          const totalStr = dMatch[2].trim();
+          const usedStr = dMatch[3].trim();
+          const totalB = parseSize(totalStr);
+          const usedB = parseSize(usedStr);
+          const pct = totalB > 0 ? Math.min(100, Math.round((usedB / totalB) * 100)) : 0;
+          dataAlloc = { profile: prof.toUpperCase(), totalStr, usedStr, pct };
+        }
+        const mMatch = dfOut.match(/Metadata,\s*([^:]+):\s*total=([^,]+),\s*used=([^\n]+)/i);
+        if (mMatch) {
+          const prof = mMatch[1].trim();
+          const totalStr = mMatch[2].trim();
+          const usedStr = mMatch[3].trim();
+          const totalB = parseSize(totalStr);
+          const usedB = parseSize(usedStr);
+          const pct = totalB > 0 ? Math.min(100, Math.round((usedB / totalB) * 100)) : 0;
+          metaAlloc = { profile: prof.toUpperCase(), totalStr, usedStr, pct };
+        }
+        v.dataAlloc = dataAlloc;
+        v.metaAlloc = metaAlloc;
+
+        const dProf = dataAlloc ? dataAlloc.profile : (dfOut.match(/Data,\s*(.*?):/i)?.[1]?.toUpperCase() || "SINGLE");
+        const mProf = metaAlloc ? metaAlloc.profile : (dfOut.match(/Metadata,\s*(.*?):/i)?.[1]?.toUpperCase() || "DUP");
+        v.raid = `<span class="btrfs-code">Data: ${dProf}</span> <span class="btrfs-code">Meta: ${mProf}</span>`;
 
         const dfLines = hOut.trim().split("\n");
-        v.usable =
-          dfLines.length > 1
-            ? formatSize(parseInt(dfLines[1].trim().split(/\s+/)[1], 10))
-            : "Unknown";
+        if (dfLines.length > 1) {
+          const cols = dfLines[1].trim().split(/\s+/);
+          const totalB = parseInt(cols[1], 10) || 0;
+          const usedB = parseInt(cols[2], 10) || 0;
+          const availB = parseInt(cols[3], 10) || 0;
+          v.totalUsable = formatSize(totalB);
+          v.used = formatSize(usedB);
+          v.free = formatSize(availB);
+          v.usable = `${formatSize(availB)} free of ${formatSize(totalB)}`;
+        } else {
+          v.usable = "Unknown";
+        }
 
         v.snapStatus = snapOut.trim() || "Not Configured";
       } catch (e) {
@@ -363,6 +391,38 @@ echo "$STATUS"
     }
   },
 
+  renderAllocBars(v, isDetail = false) {
+    if (!v.mountPoint || !v.dataAlloc || !v.metaAlloc) return "";
+    const d = v.dataAlloc;
+    const m = v.metaAlloc;
+    const dataClass = d.pct >= 90 ? "danger" : d.pct >= 75 ? "warn" : "data";
+    const metaClass = m.pct >= 85 ? "danger" : m.pct >= 70 ? "warn" : "meta";
+
+    return `
+      <div class="${isDetail ? "alloc-section mb-15" : "alloc-section mt-10 mb-15"}">
+        ${isDetail ? '<div class="alloc-section-title"><span>Storage Chunk Allocation</span><span class="text-muted text-sm">Raw chunks allocated by BTRFS</span></div>' : '<div class="alloc-section-title"><span>Chunk Allocation</span></div>'}
+        <div class="alloc-bar-group">
+          <div class="alloc-bar-header">
+            <span class="alloc-bar-title">Data <span class="btrfs-code">${escapeHtml(d.profile)}</span></span>
+            <span class="alloc-bar-stats">${escapeHtml(d.usedStr)} / ${escapeHtml(d.totalStr)} (${d.pct}%)</span>
+          </div>
+          <div class="alloc-bar-track">
+            <div class="alloc-bar-fill ${dataClass}" style="width: ${d.pct}%;"></div>
+          </div>
+        </div>
+        <div class="alloc-bar-group">
+          <div class="alloc-bar-header">
+            <span class="alloc-bar-title">Metadata <span class="btrfs-code">${escapeHtml(m.profile)}</span></span>
+            <span class="alloc-bar-stats">${escapeHtml(m.usedStr)} / ${escapeHtml(m.totalStr)} (${m.pct}%)</span>
+          </div>
+          <div class="alloc-bar-track">
+            <div class="alloc-bar-fill ${metaClass}" style="width: ${m.pct}%;"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
   /* STREAMING_CHUNK:Updating UI Nodes... */
   updateUI(v) {
     if ($(`master-usable-${v.idx}`)) {
@@ -371,6 +431,8 @@ echo "$STATUS"
         $(`master-snap-${v.idx}`).innerHTML = v.snapStatus;
       if ($(`master-raid-${v.idx}`))
         $(`master-raid-${v.idx}`).innerHTML = v.raid;
+      if ($(`master-alloc-${v.idx}`))
+        $(`master-alloc-${v.idx}`).innerHTML = this.renderAllocBars(v, false);
     }
     if ($(`raid-display-${v.idx}`)) {
       $(`raid-display-${v.idx}`).innerHTML = v.raid;
@@ -381,6 +443,8 @@ echo "$STATUS"
         $(`health-display-${v.idx}`).innerHTML = v.healthHtml;
       if ($(`opts-display-${v.idx}`))
         $(`opts-display-${v.idx}`).innerHTML = v.mountOptsHtml;
+      if ($(`alloc-display-${v.idx}`))
+        $(`alloc-display-${v.idx}`).innerHTML = this.renderAllocBars(v, true);
     }
   },
 
@@ -423,13 +487,16 @@ echo "$STATUS"
                         <span class="spec-val"><b>${escapeHtml(v.rawSize)}</b> (Usable: <span id="master-usable-${v.idx}">${v.usable}</span>)</span>
                     </div>
                     <div class="spec-row">
-                        <span class="spec-label">RAID Profile</span>
+                        <span class="spec-label">Protection</span>
                         <span class="spec-val" id="master-raid-${v.idx}">${v.raid}</span>
                     </div>
                     <div class="spec-row">
                         <span class="spec-label">Auto-Snapshot</span>
                         <span class="spec-val"><span id="master-snap-${v.idx}">${escapeHtml(v.snapStatus)}</span>${!this.hasSnapper && (v.snapStatus === "Not Configured" || v.snapStatus === "Loading...") ? ' <span class="badge-snapper-missing">No Snapper</span>' : ""}</span>
                     </div>
+                </div>
+                <div id="master-alloc-${v.idx}">
+                  ${this.renderAllocBars(v, false)}
                 </div>
                 <button class="btn btn-secondary w-100 mt-auto btn-action" data-action="open-detail" data-index="${v.idx}">Manage Storage Pool</button>
             </div>`;
@@ -506,6 +573,9 @@ echo "$STATUS"
                             <div class="spec-row"><span class="spec-label">Automatic Backups</span><span id="snap-display-${v.idx}" class="spec-val fw-bold">${escapeHtml(v.snapStatus)}</span></div>
                             <div class="spec-row"><span class="spec-label">Drive Health</span><span id="health-display-${v.idx}" class="spec-val">${v.healthHtml || '<span class="text-success fw-bold">✓ Healthy (No Errors)</span>'}</span></div>
                             <div class="spec-row"><span class="spec-label">Active Features</span><span id="opts-display-${v.idx}" class="spec-val">${v.mountOptsHtml || '<span class="text-muted">Standard</span>'}</span></div>
+                        </div>
+                        <div id="alloc-display-${v.idx}">
+                            ${this.renderAllocBars(v, true)}
                         </div>
                         <h5 class="sub-section-title mt-20 mb-10">Member Drives</h5>
                         <div class="table-scroll-container mb-15">

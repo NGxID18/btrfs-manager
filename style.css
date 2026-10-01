@@ -866,3 +866,77 @@ select.form-input option {
   font-size: 14px;
   cursor: pointer;
 }
+
+/* Storage Chunk Allocation Progress Bars */
+.alloc-section {
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+}
+.alloc-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-title);
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.alloc-bar-group {
+  margin-bottom: 10px;
+}
+.alloc-bar-group:last-child {
+  margin-bottom: 0;
+}
+.alloc-bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.alloc-bar-title {
+  font-weight: 600;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.alloc-bar-stats {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.alloc-bar-track {
+  width: 100%;
+  height: 8px;
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.alloc-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.alloc-bar-fill.data {
+  background-color: var(--accent);
+}
+.alloc-bar-fill.meta {
+  background-color: #8a3ffc;
+}
+.alloc-bar-fill.warn {
+  background-color: var(--warning);
+}
+.alloc-bar-fill.danger {
+  background-color: var(--danger);
+}
+.form-helper-text {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  line-height: 1.45;
+}
+

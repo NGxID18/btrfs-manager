@@ -5,12 +5,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="../base1/cockpit.css" type="text/css" rel="stylesheet" />
-    <link href="style.css?v=19" type="text/css" rel="stylesheet" />
+    <link href="style.css?v=20" type="text/css" rel="stylesheet" />
 
     <script src="../base1/cockpit.js"></script>
-    <script src="src/helper.js?v=19"></script>
-    <script src="src/engine.js?v=19" defer></script>
-    <script src="src/router.js?v=19" defer></script>
+    <script src="src/helper.js?v=20"></script>
+    <script src="src/engine.js?v=20" defer></script>
+    <script src="src/router.js?v=20" defer></script>
   </head>
   <body>
     <div id="view-master">
@@ -46,7 +46,7 @@
         </div>
         <div class="form-group">
           <p class="form-label-block">2. Data Protection Level:</p>
-          <label for="raid-profile" class="form-label">Protection Level:</label>
+          <label for="raid-profile" class="form-label">Data Profile:</label>
           <select id="raid-profile" class="form-input">
             <option value="single">Single (1 Drive - Standard storage)</option>
             <option value="dup">DUP (1 Drive - Duplicate safety copy on same drive)</option>
@@ -58,6 +58,21 @@
           </select>
         </div>
         <div class="form-group">
+          <p class="form-label-block">3. Metadata Protection Level:</p>
+          <label for="meta-profile" class="form-label">Metadata Profile:</label>
+          <select id="meta-profile" class="form-input">
+            <option value="dup" selected>DUP (Duplicate copy - Recommended for safety)</option>
+            <option value="single">Single (Single copy - Lower overhead, saves space)</option>
+            <option value="raid1">RAID 1 Mirror (Min 2 Drives - Mirrored copy for safety)</option>
+            <option value="raid0">RAID 0 Stripe (Min 2 Drives - Maximum speed, no backup)</option>
+            <option value="raid10">RAID 10 (Min 4 Drives - High speed and mirrored safety)</option>
+          </select>
+          <small class="form-helper-text">
+            Controls how filesystem metadata (directory trees, checksums, filenames) is stored. DUP creates two independent copies even on a single drive to protect against corruption.
+          </small>
+        </div>
+        <div class="form-group">
+          <p class="form-label-block">4. Pool Name:</p>
           <label for="volume-label" class="form-label">Pool Name:</label>
           <input
             type="text"
