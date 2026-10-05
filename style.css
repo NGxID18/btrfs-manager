@@ -833,7 +833,6 @@ select.form-input option {
 
 .advanced-topo-actions {
   display: flex;
-  flex-wrap: wrap;
   gap: 10px;
 }
 

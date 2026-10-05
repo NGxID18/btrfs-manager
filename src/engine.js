@@ -594,7 +594,7 @@ echo "$STATUS"
                                 </tbody>
                             </table>
                         </div>
-                        ${v.mountPoint ? `<div class="advanced-topo-actions"><button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${escapeHtml(v.mountPoint)}">Add Drive</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-data" data-mount="${escapeHtml(v.mountPoint)}" data-index="${v.idx}">Change Data Protection</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-metadata" data-mount="${escapeHtml(v.mountPoint)}" data-index="${v.idx}">Change Metadata Protection</button></div>` : ""}
+                        ${v.mountPoint ? `<div class="advanced-topo-actions"><button class="btn btn-primary btn-sm btn-action" data-action="add-dev-modal" data-mount="${escapeHtml(v.mountPoint)}">Add Drive</button> <button class="btn btn-secondary btn-sm btn-action" data-action="convert-raid" data-mount="${escapeHtml(v.mountPoint)}" data-index="${v.idx}">Change Protection</button></div>` : ""}
                     </div>
                     ${
                       v.mountPoint
@@ -638,7 +638,7 @@ echo "$STATUS"
                         ${
                           v.mountPoint
                             ? `<div class="create-bar mb-15">
-                            <input type="text" id="new-subvol-${v.idx}" placeholder="Subvolume name or path (e.g. data or var/lib/machines)..." class="form-input flex-grow">
+                            <input type="text" id="new-subvol-${v.idx}" placeholder="New subvolume name..." class="form-input flex-grow">
                             <button class="btn btn-primary btn-sm btn-action" data-action="subvol-ops" data-op="create" data-mount="${escapeHtml(v.mountPoint)}" data-index="${v.idx}">Create Subvolume</button> 
                         </div>
                         <div id="subvol-list-${v.idx}" class="table-scroll-container"><p class="p-15-muted">Loading subvolumes...</p></div>`
