@@ -295,60 +295,47 @@ document.addEventListener("DOMContentLoaded", () => {
           break;
         }
 
-        case "convert-raid": {
+        case "convert-raid":
+        case "convert-data": {
           const vIdx = tgt.getAttribute("data-index");
           const v = App.vols.find((vol) => vol.idx == vIdx);
           const devCount = v && v.devs ? v.devs.length : 1;
-          const currentMeta = v && v.metaAlloc ? v.metaAlloc.profile : "SINGLE";
-          const currentData = v && v.dataAlloc ? v.dataAlloc.profile : "SINGLE";
+          const currentData =
+            v && v.dataAlloc && v.dataAlloc.profile
+              ? v.dataAlloc.profile.toUpperCase()
+              : "SINGLE";
 
           const options = [
             {
-              v: "meta-dup",
-              l: "Metadata: DUP (Duplicate Metadata) - 2 copies for corruption safety (Min 1 drive)",
+              v: "single",
+              l: `Single - Single copy of data files (Default, Min 1 drive)${currentData === "SINGLE" ? " [Current]" : ""}`,
             },
             {
-              v: "meta-single",
-              l: "Metadata: Single - Single metadata copy (Saves space, Min 1 drive)",
-            },
-            {
-              v: "data-dup",
-              l: "Data: DUP (Duplicate Data) - Duplicate all files on single drive (Min 1 drive)",
-            },
-            {
-              v: "data-single",
-              l: "Data: Single - Standard single file storage (Min 1 drive)",
-            },
-            {
-              v: "both-single-dup",
-              l: "Standard Pool: Data Single + Metadata DUP (Recommended BTRFS setup, Min 1 drive)",
+              v: "dup",
+              l: `DUP (Duplicate) - 2 redundant copies of data on drive (Min 1 drive)${currentData === "DUP" ? " [Current]" : ""}`,
             },
           ];
 
           if (devCount >= 2) {
             options.push(
               {
-                v: "meta-raid1",
-                l: "Metadata: RAID 1 (Mirror) - Mirrored metadata across drives (Min 2 drives)",
+                v: "raid0",
+                l: `RAID 0 (Stripe) - Max speed & total capacity, no redundancy (Min 2 drives)${currentData === "RAID0" ? " [Current]" : ""}`,
               },
               {
                 v: "raid1",
-                l: "RAID 1 (Mirror) - Data & Metadata mirrored across drives (Min 2 drives)",
-              },
-              {
-                v: "raid0",
-                l: "RAID 0 (Stripe) - Maximize speed & capacity, no redundancy (Min 2 drives)",
+                l: `RAID 1 (Mirror) - 2 copies across separate drives (Min 2 drives)${currentData === "RAID1" ? " [Current]" : ""}`,
               },
             );
           } else {
             options.push(
               {
-                v: "raid1",
-                l: "RAID 1 (Mirror) - Mirrored across drives (Requires 2+ drives)",
+                v: "raid0",
+                l: "RAID 0 (Stripe) - Max speed & total capacity (Requires 2+ drives)",
               },
               {
-                v: "raid0",
-                l: "RAID 0 (Stripe) - Stripe without redundancy (Requires 2+ drives)",
+                v: "raid1",
+                l: "RAID 1 (Mirror) - Redundancy across drives (Requires 2+ drives)",
               },
             );
           }
@@ -356,156 +343,190 @@ document.addEventListener("DOMContentLoaded", () => {
           if (devCount >= 4) {
             options.push({
               v: "raid10",
-              l: "RAID 10 - Striped and mirrored Data & Metadata (Min 4 drives)",
+              l: `RAID 10 - Striped and mirrored data (Min 4 drives)${currentData === "RAID10" ? " [Current]" : ""}`,
             });
           } else {
             options.push({
               v: "raid10",
-              l: "RAID 10 - Striped and mirrored (Requires 4+ drives)",
+              l: "RAID 10 - Striped and mirrored data (Requires 4+ drives)",
             });
           }
 
           customSelect(
-            "Change Protection Level",
-            `Current configuration: Data ${currentData}, Metadata ${currentMeta} (${devCount} drive${devCount > 1 ? "s" : ""}).\nSelect protection mode to convert:`,
+            "Change Data Protection Level",
+            `Current Data Protection: ${currentData} (${devCount} drive${devCount > 1 ? "s" : ""}).\nSelect data protection mode to convert:`,
             options,
-            "Apply Conversion",
+            "Apply Data Conversion",
             (choice) => {
               if (!choice) return;
 
-              if (choice === "meta-dup") {
-                if (currentMeta === "DUP") {
-                  customAlert("Already Configured", "Metadata is already set to DUP on this storage pool.");
-                  return;
-                }
-                termLog(mnt, `btrfs balance start --background -f -mconvert=dup ${mnt}`, "cmd");
-                setTermStatus(mnt, "Converting...", true);
-                cmd(["btrfs", "balance", "start", "--background", "-f", "-mconvert=dup", mnt])
-                  .then((o) => {
-                    termLog(mnt, `Metadata conversion to DUP initiated in background.\n${o || "Started."}`, "status");
-                    startBalanceMonitor(mnt);
-                  })
-                  .catch((err) => {
-                    termLog(mnt, `Metadata conversion failed: ${err.message}`, "err");
-                    setTermStatus(mnt, "Error", false);
-                  });
-              } else if (choice === "meta-single") {
-                if (currentMeta === "SINGLE") {
-                  customAlert("Already Configured", "Metadata is already set to SINGLE on this storage pool.");
-                  return;
-                }
-                termLog(mnt, `btrfs balance start --background -f -mconvert=single ${mnt}`, "cmd");
-                setTermStatus(mnt, "Converting...", true);
-                cmd(["btrfs", "balance", "start", "--background", "-f", "-mconvert=single", mnt])
-                  .then((o) => {
-                    termLog(mnt, `Metadata conversion to SINGLE initiated in background.\n${o || "Started."}`, "status");
-                    startBalanceMonitor(mnt);
-                  })
-                  .catch((err) => {
-                    termLog(mnt, `Metadata conversion failed: ${err.message}`, "err");
-                    setTermStatus(mnt, "Error", false);
-                  });
-              } else if (choice === "meta-raid1") {
-                if (devCount < 2) {
-                  customAlert("More Drives Needed", "Metadata RAID 1 requires at least 2 physical drives in the pool.");
-                  return;
-                }
-                termLog(mnt, `btrfs balance start --background -f -mconvert=raid1 ${mnt}`, "cmd");
-                setTermStatus(mnt, "Converting...", true);
-                cmd(["btrfs", "balance", "start", "--background", "-f", "-mconvert=raid1", mnt])
-                  .then((o) => {
-                    termLog(mnt, `Metadata conversion to RAID 1 initiated in background.\n${o || "Started."}`, "status");
-                    startBalanceMonitor(mnt);
-                  })
-                  .catch((err) => {
-                    termLog(mnt, `Metadata conversion failed: ${err.message}`, "err");
-                    setTermStatus(mnt, "Error", false);
-                  });
-              } else if (choice === "data-dup") {
-                termLog(mnt, `btrfs balance start --background -f -dconvert=dup ${mnt}`, "cmd");
-                setTermStatus(mnt, "Converting...", true);
-                cmd(["btrfs", "balance", "start", "--background", "-f", "-dconvert=dup", mnt])
-                  .then((o) => {
-                    termLog(mnt, `Data conversion to DUP initiated in background.\n${o || "Started."}`, "status");
-                    startBalanceMonitor(mnt);
-                  })
-                  .catch((err) => {
-                    termLog(mnt, `Data conversion failed: ${err.message}`, "err");
-                    setTermStatus(mnt, "Error", false);
-                  });
-              } else if (choice === "data-single") {
-                termLog(mnt, `btrfs balance start --background -f -dconvert=single ${mnt}`, "cmd");
-                setTermStatus(mnt, "Converting...", true);
-                cmd(["btrfs", "balance", "start", "--background", "-f", "-dconvert=single", mnt])
-                  .then((o) => {
-                    termLog(mnt, `Data conversion to SINGLE initiated in background.\n${o || "Started."}`, "status");
-                    startBalanceMonitor(mnt);
-                  })
-                  .catch((err) => {
-                    termLog(mnt, `Data conversion failed: ${err.message}`, "err");
-                    setTermStatus(mnt, "Error", false);
-                  });
-              } else if (choice === "both-single-dup") {
-                termLog(mnt, `btrfs balance start --background -f -dconvert=single -mconvert=dup ${mnt}`, "cmd");
-                setTermStatus(mnt, "Converting...", true);
-                cmd(["btrfs", "balance", "start", "--background", "-f", "-dconvert=single", "-mconvert=dup", mnt])
-                  .then((o) => {
-                    termLog(mnt, `Conversion to Data: SINGLE and Metadata: DUP initiated in background.\n${o || "Started."}`, "status");
-                    startBalanceMonitor(mnt);
-                  })
-                  .catch((err) => {
-                    termLog(mnt, `Conversion failed: ${err.message}`, "err");
-                    setTermStatus(mnt, "Error", false);
-                  });
-              } else if (choice === "raid1") {
-                if (devCount < 2) {
-                  customAlert("More Drives Needed", "RAID 1 requires at least 2 physical drives in the pool. Please add more drives first using 'Add Drive'.");
-                  return;
-                }
-                termLog(mnt, `btrfs balance start --background -f -dconvert=raid1 -mconvert=raid1 ${mnt}`, "cmd");
-                setTermStatus(mnt, "Converting...", true);
-                cmd(["btrfs", "balance", "start", "--background", "-f", "-dconvert=raid1", "-mconvert=raid1", mnt])
-                  .then((o) => {
-                    termLog(mnt, `RAID 1 conversion initiated in background.\n${o || "Started."}`, "status");
-                    startBalanceMonitor(mnt);
-                  })
-                  .catch((err) => {
-                    termLog(mnt, `RAID 1 conversion failed: ${err.message}`, "err");
-                    setTermStatus(mnt, "Error", false);
-                  });
-              } else if (choice === "raid0") {
-                if (devCount < 2) {
-                  customAlert("More Drives Needed", "RAID 0 requires at least 2 physical drives in the pool.");
-                  return;
-                }
-                termLog(mnt, `btrfs balance start --background -f -dconvert=raid0 -mconvert=raid1 ${mnt}`, "cmd");
-                setTermStatus(mnt, "Converting...", true);
-                cmd(["btrfs", "balance", "start", "--background", "-f", "-dconvert=raid0", "-mconvert=raid1", mnt])
-                  .then((o) => {
-                    termLog(mnt, `RAID 0 conversion initiated in background.\n${o || "Started."}`, "status");
-                    startBalanceMonitor(mnt);
-                  })
-                  .catch((err) => {
-                    termLog(mnt, `RAID 0 conversion failed: ${err.message}`, "err");
-                    setTermStatus(mnt, "Error", false);
-                  });
-              } else if (choice === "raid10") {
-                if (devCount < 4) {
-                  customAlert("More Drives Needed", "RAID 10 requires at least 4 physical drives in the pool.");
-                  return;
-                }
-                termLog(mnt, `btrfs balance start --background -f -dconvert=raid10 -mconvert=raid10 ${mnt}`, "cmd");
-                setTermStatus(mnt, "Converting...", true);
-                cmd(["btrfs", "balance", "start", "--background", "-f", "-dconvert=raid10", "-mconvert=raid10", mnt])
-                  .then((o) => {
-                    termLog(mnt, `RAID 10 conversion initiated in background.\n${o || "Started."}`, "status");
-                    startBalanceMonitor(mnt);
-                  })
-                  .catch((err) => {
-                    termLog(mnt, `RAID 10 conversion failed: ${err.message}`, "err");
-                    setTermStatus(mnt, "Error", false);
-                  });
+              if (currentData.toLowerCase() === choice.toLowerCase()) {
+                customAlert(
+                  "Already Configured",
+                  `Data protection is already set to ${currentData} on this storage pool.`,
+                );
+                return;
               }
+
+              if ((choice === "raid0" || choice === "raid1") && devCount < 2) {
+                customAlert(
+                  "More Drives Needed",
+                  `${choice.toUpperCase()} requires at least 2 physical drives in the pool. Use "Add Drive" first.`,
+                );
+                return;
+              }
+
+              if (choice === "raid10" && devCount < 4) {
+                customAlert(
+                  "More Drives Needed",
+                  "RAID 10 requires at least 4 physical drives in the pool. Use \"Add Drive\" first.",
+                );
+                return;
+              }
+
+              termLog(
+                mnt,
+                `btrfs balance start --background -f -dconvert=${choice} ${mnt}`,
+                "cmd",
+              );
+              setTermStatus(mnt, "Converting...", true);
+              cmd([
+                "btrfs",
+                "balance",
+                "start",
+                "--background",
+                "-f",
+                `-dconvert=${choice}`,
+                mnt,
+              ])
+                .then((o) => {
+                  termLog(
+                    mnt,
+                    `Data conversion to ${choice.toUpperCase()} initiated in background.\n${o || "Started."}`,
+                    "status",
+                  );
+                  startBalanceMonitor(mnt);
+                })
+                .catch((err) => {
+                  termLog(
+                    mnt,
+                    `Data conversion failed: ${err.message}`,
+                    "err",
+                  );
+                  setTermStatus(mnt, "Error", false);
+                });
+            },
+          );
+          break;
+        }
+
+        case "convert-metadata": {
+          const vIdx = tgt.getAttribute("data-index");
+          const v = App.vols.find((vol) => vol.idx == vIdx);
+          const devCount = v && v.devs ? v.devs.length : 1;
+          const currentMeta =
+            v && v.metaAlloc && v.metaAlloc.profile
+              ? v.metaAlloc.profile.toUpperCase()
+              : "SINGLE";
+
+          const options = [
+            {
+              v: "dup",
+              l: `DUP (Duplicate) - 2 redundant copies for corruption safety & self-healing (Recommended, Min 1 drive)${currentMeta === "DUP" ? " [Current]" : ""}`,
+            },
+            {
+              v: "single",
+              l: `Single - Single copy of metadata (Saves space, Min 1 drive)${currentMeta === "SINGLE" ? " [Current]" : ""}`,
+            },
+          ];
+
+          if (devCount >= 2) {
+            options.push({
+              v: "raid1",
+              l: `RAID 1 (Mirror) - Mirrored metadata across separate drives (Min 2 drives)${currentMeta === "RAID1" ? " [Current]" : ""}`,
+            });
+          } else {
+            options.push({
+              v: "raid1",
+              l: "RAID 1 (Mirror) - Mirrored metadata across drives (Requires 2+ drives)",
+            });
+          }
+
+          if (devCount >= 4) {
+            options.push({
+              v: "raid10",
+              l: `RAID 10 - Striped and mirrored metadata (Min 4 drives)${currentMeta === "RAID10" ? " [Current]" : ""}`,
+            });
+          } else {
+            options.push({
+              v: "raid10",
+              l: "RAID 10 - Striped and mirrored metadata (Requires 4+ drives)",
+            });
+          }
+
+          customSelect(
+            "Change Metadata Protection Level",
+            `Current Metadata Protection: ${currentMeta} (${devCount} drive${devCount > 1 ? "s" : ""}).\nSelect metadata protection mode to convert:`,
+            options,
+            "Apply Metadata Conversion",
+            (choice) => {
+              if (!choice) return;
+
+              if (currentMeta.toLowerCase() === choice.toLowerCase()) {
+                customAlert(
+                  "Already Configured",
+                  `Metadata protection is already set to ${currentMeta} on this storage pool.`,
+                );
+                return;
+              }
+
+              if (choice === "raid1" && devCount < 2) {
+                customAlert(
+                  "More Drives Needed",
+                  "Metadata RAID 1 requires at least 2 physical drives in the pool. Use \"Add Drive\" first.",
+                );
+                return;
+              }
+
+              if (choice === "raid10" && devCount < 4) {
+                customAlert(
+                  "More Drives Needed",
+                  "Metadata RAID 10 requires at least 4 physical drives in the pool. Use \"Add Drive\" first.",
+                );
+                return;
+              }
+
+              termLog(
+                mnt,
+                `btrfs balance start --background -f -mconvert=${choice} ${mnt}`,
+                "cmd",
+              );
+              setTermStatus(mnt, "Converting...", true);
+              cmd([
+                "btrfs",
+                "balance",
+                "start",
+                "--background",
+                "-f",
+                `-mconvert=${choice}`,
+                mnt,
+              ])
+                .then((o) => {
+                  termLog(
+                    mnt,
+                    `Metadata conversion to ${choice.toUpperCase()} initiated in background.\n${o || "Started."}`,
+                    "status",
+                  );
+                  startBalanceMonitor(mnt);
+                })
+                .catch((err) => {
+                  termLog(
+                    mnt,
+                    `Metadata conversion failed: ${err.message}`,
+                    "err",
+                  );
+                  setTermStatus(mnt, "Error", false);
+                });
             },
           );
           break;
@@ -1024,23 +1045,97 @@ printf "Automatic backups configured successfully!\\nFrequency: %s\\nRetention L
               },
             );
           } else if (op === "create") {
-            const rawNm = $(`new-subvol-${i}`)?.value.trim();
-            const nm = rawNm ? rawNm.replace(/[^a-zA-Z0-9._-]/g, "") : "";
-            if (!nm || nm === "." || nm === "..") {
-              customAlert("Error", "Please enter a valid folder name (letters, numbers, dashes, underscores).");
+            const rawInput = $(`new-subvol-${i}`)?.value.trim() || "";
+            if (!rawInput) {
+              customAlert(
+                "Input Required",
+                "Please enter a subvolume name or path (e.g. 'data' or 'var/lib/machines').",
+              );
               return;
             }
-            cmd([
-              "btrfs",
-              "subvolume",
-              "create",
-              mnt === "/" ? `/${nm}` : `${mnt}/${nm}`,
-            ])
+
+            let pathStr = rawInput;
+            const normalizedMnt = mnt.replace(/\/+$/, "");
+            if (normalizedMnt && pathStr.startsWith(normalizedMnt + "/")) {
+              pathStr = pathStr.slice(normalizedMnt.length);
+            }
+            pathStr = pathStr.replace(/^\/+/, "").replace(/\/+$/, "");
+
+            const segments = pathStr
+              .split("/")
+              .map((s) => s.trim())
+              .filter(Boolean);
+            if (segments.length === 0) {
+              customAlert("Invalid Name", "Please enter a valid subvolume name or path.");
+              return;
+            }
+
+            for (const seg of segments) {
+              if (seg === "." || seg === ".." || !/^[a-zA-Z0-9._-]+$/.test(seg)) {
+                customAlert(
+                  "Invalid Path Segment",
+                  `Segment "${seg}" is invalid. Folder names may only contain letters, numbers, dots, dashes, and underscores, and cannot be "." or "..".`,
+                );
+                return;
+              }
+            }
+
+            const cleanRelPath = segments.join("/");
+            const targetPath =
+              mnt === "/" ? `/${cleanRelPath}` : `${normalizedMnt}/${cleanRelPath}`;
+
+            const script = `
+TARGET="$1"
+MNT="$2"
+
+# 1. Check if TARGET already exists as a subvolume
+if btrfs subvolume show "$TARGET" >/dev/null 2>&1; then
+    echo "ERROR: Subvolume '$TARGET' already exists." >&2
+    exit 1
+fi
+
+# 2. Check if TARGET exists as a file or symlink
+if [ -L "$TARGET" ] || { [ -e "$TARGET" ] && [ ! -d "$TARGET" ]; }; then
+    echo "ERROR: Target path '$TARGET' already exists and is a file or symlink." >&2
+    exit 1
+fi
+
+# 3. Ensure all parent directories exist
+PARENT=$(dirname "$TARGET")
+if [ ! -d "$PARENT" ]; then
+    mkdir -p "$PARENT" 2>/dev/null || { echo "ERROR: Failed to create parent directory '$PARENT'." >&2; exit 1; }
+fi
+
+# 4. If TARGET already exists as an empty directory (common in Linux like /var/lib/machines created at boot),
+# remove the empty folder so btrfs subvolume create can take its place.
+# If it is NOT empty, prevent data loss by aborting.
+if [ -d "$TARGET" ]; then
+    if [ -z "$(ls -A "$TARGET" 2>/dev/null)" ]; then
+        rmdir "$TARGET" 2>/dev/null || { echo "ERROR: Could not prepare '$TARGET': unable to remove existing empty folder." >&2; exit 1; }
+    else
+        echo "ERROR: Target folder '$TARGET' already exists and is not empty. Please move or clear its contents first." >&2
+        exit 1
+    fi
+fi
+
+# 5. Create the subvolume
+ERR=$(btrfs subvolume create "$TARGET" 2>&1)
+RES=$?
+if [ $RES -eq 0 ]; then
+    echo "$ERR"
+    exit 0
+else
+    echo "ERROR: $ERR" >&2
+    exit 1
+fi
+`;
+
+            cmd(["sh", "-c", script, "--", targetPath, mnt])
               .then(() => {
                 if ($(`new-subvol-${i}`)) $(`new-subvol-${i}`).value = "";
                 App.fetchSubvols(mnt, i);
               })
-              .catch((e) => customAlert("Failed", e.message));
+              .catch((e) => customAlert("Creation Failed", e.message || String(e)));
           } else if (op === "del") {
             const isSnapshotContainer =
               p === ".snapshots" ||
