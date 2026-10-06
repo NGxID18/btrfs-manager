@@ -933,9 +933,9 @@ fi`;
                   v: "disable",
                   l: "Turn Off Automatic Backups",
                 },
-                { v: "hourly", l: "Hourly Backups (Keeps hourly and daily backups)" },
-                { v: "daily", l: "Daily Backups (Keeps daily backups)" },
-                { v: "weekly", l: "Weekly Backups (Keeps weekly backups)" },
+                { v: "hourly", l: "Hourly Backups (Runs once every hour)" },
+                { v: "daily", l: "Daily Backups (Runs once every day)" },
+                { v: "weekly", l: "Weekly Backups (Runs once every week)" },
               ],
               "Next",
               (freq) => {
@@ -950,7 +950,7 @@ for cdir in /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly;
     if [ -d "$cdir" ]; then
         for cfile in "$cdir"/btrfs_*; do
             [ -f "$cfile" ] || continue
-            if grep -qs "$1" "$cfile"; then
+            if grep -qs "$1" "$cfile" 2>/dev/null || { [ -n "$CFG_NAME" ] && { grep -qs "$CFG_NAME" "$cfile" 2>/dev/null || [ "$(basename "$cfile")" = "btrfs_snap_$CFG_NAME" ]; }; }; then
                 rm -f "$cfile" 2>/dev/null || true
             fi
         done
@@ -961,9 +961,9 @@ done
                 if (freq === "disable") {
                   const bashScript = `
 TARGET="$1"
-${cleanOldCron}
 if ! command -v snapper >/dev/null 2>&1; then echo "ERROR: Snapper is not installed."; exit 1; fi;
 CFG_NAME=$(snapper list-configs 2>/dev/null | awk -v mnt="$TARGET" '$3 == mnt || $3 == mnt"/" {print $1; exit}')
+${cleanOldCron}
 if [ -n "$CFG_NAME" ] && [ "$CFG_NAME" != "Config" ]; then
     snapper -c "$CFG_NAME" delete-config 2>/dev/null || true
     rm -f "/etc/snapper/configs/$CFG_NAME" 2>/dev/null || true
@@ -1002,7 +1002,6 @@ fi
 MNT_PT="$1"
 FREQ="$2"
 LIMIT="$3"
-${cleanOldCron}
 if ! command -v snapper >/dev/null 2>&1; then echo "ERROR: Snapper is not installed.\\nPlease install it first (e.g. dnf install snapper or apt install snapper or pacman -S snapper)."; exit 1; fi;
 
 CFG_NAME=$(snapper list-configs 2>/dev/null | awk -v mnt="$MNT_PT" '$3 == mnt || $3 == mnt"/" {print $1; exit}')
@@ -1016,16 +1015,31 @@ if [ -z "$CFG_NAME" ] || [ "$CFG_NAME" = "Config" ]; then
     snapper -c "$CFG_NAME" create-config "$MNT_PT" || { echo "ERROR: Failed to create backup config for $MNT_PT."; exit 1; }
 fi
 
-H=0; D=0; W=0
-[ "$FREQ" = "hourly" ] && H="$LIMIT"
-[ "$FREQ" = "daily" ] && D="$LIMIT"
-[ "$FREQ" = "weekly" ] && W="$LIMIT"
+${cleanOldCron}
 
-snapper -c "$CFG_NAME" set-config TIMELINE_CREATE=yes TIMELINE_LIMIT_HOURLY="$H" TIMELINE_LIMIT_DAILY="$D" TIMELINE_LIMIT_WEEKLY="$W" TIMELINE_LIMIT_MONTHLY=0 TIMELINE_LIMIT_YEARLY=0
+# Disable Snapper's default hourly timeline so it doesn't create unwanted hourly snapshots
+# Set NUMBER cleanup to retain exactly $LIMIT snapshots
+snapper -c "$CFG_NAME" set-config TIMELINE_CREATE=no TIMELINE_CLEANUP=no NUMBER_CLEANUP=yes NUMBER_LIMIT="$LIMIT" NUMBER_MIN_AGE=0
 
-systemctl enable --now snapper-timeline.timer snapper-cleanup.timer >/dev/null 2>&1 || true
+mkdir -p "/etc/cron.\${FREQ}" 2>/dev/null || true
+CRON_FILE="/etc/cron.\${FREQ}/btrfs_snap_\${CFG_NAME}"
+cat << 'EOF' > "$CRON_FILE"
+#!/bin/sh
+# Target: TARGET_REPLACE
+# Config: CFG_REPLACE
+# Frequency: FREQ_REPLACE
+# Limit: LIMIT_REPLACE
+if command -v snapper >/dev/null 2>&1; then
+    snapper -c "CFG_REPLACE" create -d "Auto (FREQ_REPLACE)" -c number || true
+    snapper -c "CFG_REPLACE" cleanup number 2>/dev/null || true
+fi
+EOF
+sed -i -e "s|TARGET_REPLACE|$MNT_PT|g" -e "s|CFG_REPLACE|$CFG_NAME|g" -e "s|FREQ_REPLACE|$FREQ|g" -e "s|LIMIT_REPLACE|$LIMIT|g" "$CRON_FILE"
+chmod 755 "$CRON_FILE"
 
-printf "Automatic backups configured successfully!\\nFrequency: %s\\nRetention Limit: %s backups\\n" "$FREQ" "$LIMIT"
+systemctl enable --now snapper-cleanup.timer >/dev/null 2>&1 || true
+
+printf "Automatic backups configured successfully!\\nFrequency: %s (Runs once per %s)\\nRetention Limit: %s backups\\n" "$FREQ" "$FREQ" "$LIMIT"
 `;
                         cmd([
                           "sh",
@@ -1722,6 +1736,9 @@ if command -v snapper >/dev/null 2>&1; then
     for cfg in $CFGS; do
         [ -n "$cfg" ] && [ "$cfg" != "Config" ] && snapper -c "$cfg" delete-config 2>/dev/null || true
         rm -f "/etc/snapper/configs/$cfg" 2>/dev/null || true
+        for cdir in /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly; do
+            rm -f "$cdir/btrfs_snap_$cfg" 2>/dev/null || true
+        done
         for f in /etc/conf.d/snapper /etc/default/snapper /etc/sysconfig/snapper; do
             if [ -f "$f" ]; then
                 sed -i -E "s/\\b$cfg\\b//g; s/\"[[:space:]]+/\"/; s/[[:space:]]+\"/\"/; s/[[:space:]]+/ /g" "$f" 2>/dev/null || true
