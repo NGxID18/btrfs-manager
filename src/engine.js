@@ -252,33 +252,51 @@ fi
         const snapScript = `
 MNT="$1"
 STATUS="Not Configured"
+CFG=""
 if command -v snapper >/dev/null 2>&1; then
     CFG=$(snapper list-configs 2>/dev/null | awk -v mnt="$MNT" '$3 == mnt || $3 == mnt"/" {print $1; exit}')
-    if [ -n "$CFG" ] && [ "$CFG" != "Config" ]; then
-        IS_ON=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_CREATE"{print $3}')
-        if [ "$IS_ON" = "yes" ]; then
-            H=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_HOURLY"{print $3}')
-            D=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_DAILY"{print $3}')
-            W=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_WEEKLY"{print $3}')
-            M=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_MONTHLY"{print $3}')
-            if [ "$H" != "0" ] && [ -n "$H" ]; then STATUS="Hourly (Keeps up to $H backups)"
-            elif [ "$D" != "0" ] && [ -n "$D" ]; then STATUS="Daily (Keeps up to $D backups)"
-            elif [ "$W" != "0" ] && [ -n "$W" ]; then STATUS="Weekly (Keeps up to $W backups)"
-            elif [ "$M" != "0" ] && [ -n "$M" ]; then STATUS="Monthly (Keeps up to $M backups)"
-            else STATUS="Enabled (Active)"; fi
-        fi
-    fi
 fi
-if [ "$STATUS" = "Not Configured" ]; then
-    CRON=$(grep -l "btrfs subvolume snapshot.*$MNT" /etc/cron.hourly/* /etc/cron.daily/* /etc/cron.weekly/* /etc/cron.monthly/* 2>/dev/null | head -n 1)
-    if [ -n "$CRON" ]; then
-        FRQ=$(echo "$CRON" | awk -F'/' '{print $3}' | sed 's/cron\\.//' | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')
-        LIM=$(grep "tail -n" "$CRON" | sed -E 's/.*tail -n \\+([0-9]+).*/\\1/')
-        if [ -n "$LIM" ]; then
-            STATUS="$FRQ (Keeps up to $((LIM - 1)) backups)"
-        else
-            STATUS="$FRQ (Automated)"
+
+# 1. Check Cron schedule (Solution 1: exact frequency hourly/daily/weekly)
+CRON=""
+for cdir in /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly; do
+    [ -d "$cdir" ] || continue
+    for cf in "$cdir"/btrfs_*; do
+        [ -f "$cf" ] || continue
+        if grep -qs "$MNT" "$cf" 2>/dev/null || { [ -n "$CFG" ] && [ "$CFG" != "Config" ] && { grep -qs "$CFG" "$cf" 2>/dev/null || [ "$(basename "$cf")" = "btrfs_snap_$CFG" ]; }; }; then
+            CRON="$cf"
+            break 2
         fi
+    done
+done
+
+if [ -n "$CRON" ]; then
+    FRQ=$(echo "$CRON" | awk -F'/' '{print $3}' | sed 's/cron\.//' | awk '{ print toupper(substr($0, 1, 1)) substr($0, 2) }')
+    LIM=$(grep -E "^# Limit:" "$CRON" 2>/dev/null | awk '{print $3}')
+    if [ -z "$LIM" ] && [ -n "$CFG" ] && [ "$CFG" != "Config" ] && command -v snapper >/dev/null 2>&1; then
+        LIM=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="NUMBER_LIMIT"{print $3}')
+    fi
+    if [ -z "$LIM" ]; then
+        LIM=$(grep "tail -n" "$CRON" 2>/dev/null | sed -E 's/.*tail -n \\+([0-9]+).*/\\1/')
+        [ -n "$LIM" ] && LIM=$((LIM - 1))
+    fi
+    if [ -n "$LIM" ]; then
+        STATUS="$FRQ (Keeps up to $LIM backups)"
+    else
+        STATUS="$FRQ (Automated)"
+    fi
+elif [ -n "$CFG" ] && [ "$CFG" != "Config" ] && command -v snapper >/dev/null 2>&1; then
+    IS_ON=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_CREATE"{print $3}')
+    if [ "$IS_ON" = "yes" ]; then
+        H=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_HOURLY"{print $3}')
+        D=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_DAILY"{print $3}')
+        W=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_WEEKLY"{print $3}')
+        M=$(snapper -c "$CFG" get-config 2>/dev/null | awk '$1=="TIMELINE_LIMIT_MONTHLY"{print $3}')
+        if [ "$H" != "0" ] && [ -n "$H" ]; then STATUS="Hourly (Keeps up to $H backups)"
+        elif [ "$D" != "0" ] && [ -n "$D" ]; then STATUS="Daily (Keeps up to $D backups)"
+        elif [ "$W" != "0" ] && [ -n "$W" ]; then STATUS="Weekly (Keeps up to $W backups)"
+        elif [ "$M" != "0" ] && [ -n "$M" ]; then STATUS="Monthly (Keeps up to $M backups)"
+        else STATUS="Enabled (Active)"; fi
     fi
 fi
 echo "$STATUS"

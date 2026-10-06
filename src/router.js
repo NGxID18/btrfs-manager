@@ -860,6 +860,9 @@ for cfg in $CFG_LIST; do
         snapper -c "$cfg" delete-config 2>/dev/null || true
     fi
     rm -f "/etc/snapper/configs/$cfg" 2>/dev/null || true
+    for cdir in /etc/cron.hourly /etc/cron.daily /etc/cron.weekly /etc/cron.monthly; do
+        rm -f "$cdir/btrfs_snap_$cfg" 2>/dev/null || true
+    done
     for f in /etc/conf.d/snapper /etc/default/snapper /etc/sysconfig/snapper; do
         if [ -f "$f" ]; then
             sed -i -E "s/\\b$cfg\\b//g; s/\"[[:space:]]+/\"/; s/[[:space:]]+\"/\"/; s/[[:space:]]+/ /g" "$f" 2>/dev/null || true
